@@ -14,6 +14,9 @@
 | 想知道侧边栏面板怎么注册、数据怎么到浏览器 | [subsystems/client-sidebar.md](subsystems/client-sidebar.md) |
 | 想知道当初为什么这么选 | [decisions/](decisions/README.md) |
 | 想知道哪些做完了、哪些还没做 | [roadmap.md](roadmap.md) |
+| 想看「如果不受迁移成本约束，原生插件该怎么设计」 | [native-redesign.md](native-redesign.md) |
+
+> `native-redesign.md` 是**提案**，不是契约：它描述的是目标形态，与当前代码不一致是正常的。契约文档（`architecture.md` 与 `subsystems/*`）描述现状，两者冲突时以契约文档为准。
 
 ## 文档约定
 
