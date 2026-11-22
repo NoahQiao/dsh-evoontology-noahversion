@@ -76,7 +76,7 @@ Remove-Item -Recurse -Force "$HOME\.dsh\evoontology"
                                     或 evo_revert({version:'vN-1'}) 一句话回退
 ```
 
-命令行等价物：`/evo status`、`/evo versions`、`/evo diff v0 v1`、`/evo publish v1`、`/evo revert v0`、`/evo export`、`/evo path`。
+命令行等价物：`/evo status`、`/evo versions`、`/evo diff v0 v1`、`/evo publish v1`、`/evo revert v0`、`/evo discard v2`（删草稿）、`/evo export`、`/evo path`。
 
 ## 八个工具
 

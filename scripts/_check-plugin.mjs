@@ -183,6 +183,10 @@ const cmdUnknown = await runCmd('/evo nope')
 check('command rejects unknown subcommands', cmdUnknown.kind === 'error' && /未知子命令/.test(cmdUnknown.text))
 const cmdMultiPublish = await runCmd('/evo publish')
 check('command publish refuses to guess between drafts', cmdMultiPublish.kind === 'error' && /请指定/.test(cmdMultiPublish.text), cmdMultiPublish.text)
+const cmdDiscard = await runCmd('/evo discard v3')
+check('command discards a draft', cmdDiscard.kind === 'success' && /v3 已删除/.test(cmdDiscard.text), cmdDiscard.text)
+const cmdDiscardActive = await runCmd('/evo discard v0')
+check('command refuses to discard the active version', cmdDiscardActive.kind === 'error' && /only a draft/.test(cmdDiscardActive.text), cmdDiscardActive.text)
 
 // --- skills
 const provider = createSkillProvider((m) => warnings.push(m))
