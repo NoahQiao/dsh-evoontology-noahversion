@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="Evolutionary ontology layers">
+  <title>Evolutionary ontology layers</title>
+  <rect x="7" y="9" width="26" height="6" rx="3" fill="#3552B8"/>
+  <rect x="7" y="19" width="26" height="6" rx="3" fill="#5476EE"/>
+  <rect x="7" y="29" width="26" height="6" rx="3" fill="#8AA6F7"/>
+  <path d="M36 12.5C43 15.5 43 28.5 36 31.5" fill="none" stroke="#1E3384" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M36 31.5l-5.2-3.4v6.8z" fill="#1E3384"/>
+</svg>
