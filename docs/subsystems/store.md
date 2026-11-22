@@ -17,7 +17,7 @@
 | `node` | `(version_id, node_id)` | `kind ∈ {term, mapping, constraint, evidence, relation}`；`body` 是 JSON |
 | `edge` | `(version_id, src, dst, type)` | 两个外键都指向 `node(version_id, node_id)`，所以边不可能悬空 |
 | `evidence` | `(version_id, evidence_id)` | `node` 里 evidence 的展开副本，便于按 digest 判过期 |
-| `question` / `task` / `event` / `evaluation` / `run` | — | P1/P3 用，P0 已建表但只有 `status()` 读 `run` |
+| `question` / `task` / `event` / `evaluation` / `run` | — | 任务闭环已用 `question` / `task` / `event`（P1）；`evaluation` / `run` 留给 P3 |
 
 两个索引是设计的一部分：
 
@@ -41,6 +41,11 @@ CREATE UNIQUE INDEX version_patch_hash    ON version(patch_hash);
 | `publish(id)` | draft → active（旧的转 retired）；**先校验接地** |
 | `revert(id)` | retired → active（零成本回退） |
 | `discard(id)` | 删除草稿及其 evidence 行 |
+| `diffVersions(fromId, toId)` | 节点级 `added / removed / changed` + 边级差异；`changed` 用 `canonicalJson` 判定，键序不影响结果 |
+| `startTask({question, dataSource, sessionId, versionId})` | 必须在有激活版本时才能开；同一 session 只允许一个 `running` |
+| `finishTask(taskId, {status, answer})` | `completed / failed / interrupted`；已结束则幂等返回 `changed: false` |
+| `recordEvent(taskId, {tool, args, result, error})` | 每次 `evo_query` 一条（含被 gate 拒绝的），`seq` 自增，`event_id` 幂等 |
+| `events(taskId)` / `task(taskId)` / `runningTask(sessionId)` / `taskStats()` | 任务与事件的读取面 |
 | `workingSet()` / `groundingProblems()` | 校验内部自用，也可被工具复用 |
 
 `applyPatch` 的 patch 形状：

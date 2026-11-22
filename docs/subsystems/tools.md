@@ -2,7 +2,7 @@
 
 ## 1. 定位与归属
 
-模型能调的全部动作，长在 `ctx.tools` 这个座位上。八个工具，每个一件职责。这里同时是**提示成本**的守门人：每个工具的 schema 都会常驻系统提示，所以「多一个工具」是有价格的。
+模型能调的全部动作，长在 `ctx.tools` 这个座位上。十一个工具，每个一件职责。这里同时是**提示成本**的守门人：每个工具的 schema 都会常驻系统提示，所以「多一个工具」是有价格的。
 
 旧实现有 29 个工具，其中 9 个是同一个进化状态机的不同转移——那是把内部状态机当对外契约暴露了。
 
@@ -12,14 +12,19 @@
 
 | 工具 | 职责 | 写？ |
 |---|---|---|
-| `evo_status` | 激活版本、五类计数、草稿（含超期悬挂）、最近 run、版本列表 | — |
+| `evo_status` | 激活版本、五类计数、草稿（含超期悬挂）、最近 run、任务统计、版本列表 | — |
 | `evo_browse` | 关键词 → 节点 + 证据（`kind` 过滤、`limit`） | — |
 | `evo_resolve` | 意图 → 命中的 term/mapping/constraint/evidence + 只读查询骨架 | — |
-| `evo_history` | 版本时间线；给 `from`/`to` 则返回差异 | — |
+| `evo_history` | 版本时间线；给 `from`/`to` 则返回节点级 `+ / - / ~` 差异 | — |
+| `evo_query` | 唯一数据源执行器：一条只读 `SELECT` / `WITH`，sqlite / csv / json | — |
+| `evo_task_start` | 把「这次要回答什么」钉在一个已发布版本上 | ✅ `task` |
+| `evo_task_finish` | 收尾任务（completed / failed / interrupted），幂等 | ✅ `task` |
 | `evo_commit` | patch → draft 版本（幂等、接地校验、`base` 乐观并发） | ✅ |
 | `evo_publish` | 校验 + 激活 draft（旧的转 retired） | ✅ |
 | `evo_revert` | active 指回 retired 版本 | ✅ |
 | `evo_export` | 导出 Markdown / JSON 到 `exports/` | 写派生物 |
+
+`evo_query` 的执行契约（gate、白名单、上限、超时与它的已知代价）单独写在 [query.md](query.md)。
 
 ### 2.2 返回形状
 
@@ -46,10 +51,12 @@
 
 | 想加 | 做法 | 注意 |
 |---|---|---|
-| `evo_query`（P1） | 新工具 + `lib/connector.js` | 必须只读；authorizer 白名单 SELECT/READ/FUNCTION/RECURSIVE；行数 100、单值 1MB、5s 上限 |
-| `evo_task_start/finish`（P1） | 写 `task` / `event` 表 | 轨迹真相是 session log，不要自建 trajectory 文件 |
+| 自动进化（P3） | `ctx.workflowEngine` + 子 agent | 轨迹真相是 session log，不要自建 trajectory 文件 |
 | 危险动作（P3） | `ctx.approval` + `ctx.actionCards` | 不要自己在聊天里问「同意吗」——那不可审计 |
 | 只读角色限制（P3） | `ctx.tools.restrict` | Critic 只能 browse；Evaluator 连本体都看不到 |
+| 新数据源（P4） | `DataSourceConnector` 接口 | `describe()` 出可命名候选列，`query()` 只能只读 |
+
+任务闭环已交付（P1）。任务的 `event` 表记录的是**每一次 `evo_query`**，包括被 gate 拒绝的那些——被拒绝的尝试也是事实，不记录会让「这个任务到底试过什么」失真。
 
 ## 4. 不做
 

@@ -1,8 +1,8 @@
 {
   "name": "@noah/dsh-evoontology",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Native EvoOntology semantic layer for DeepSeek Harness: a versioned, evidence-grounded ontology in one SQLite file, exposed as tools, a command and skills.",
+  "description": "Native EvoOntology semantic layer for DeepSeek Harness: a versioned, evidence-grounded ontology in one SQLite file, exposed as tools, a command, skills and one line of prompt state.",
   "type": "module",
   "license": "MIT",
   "exports": {

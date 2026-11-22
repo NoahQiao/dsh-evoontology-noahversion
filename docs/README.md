@@ -11,6 +11,7 @@
 | 这东西是什么、为什么这样分层 | [architecture.md](architecture.md) |
 | 语义存在哪、版本怎么保证不自相矛盾 | [subsystems/store.md](subsystems/store.md) |
 | 模型能调什么、返回长什么样 | [subsystems/tools.md](subsystems/tools.md) |
+| 查数为什么只读、超时怎么掐掉 | [subsystems/query.md](subsystems/query.md) |
 | 技能怎么被注册、为什么只有三份 | [subsystems/skills.md](subsystems/skills.md) |
 | 插件怎么接进宿主、环境变量有哪些 | [subsystems/host-plugin.md](subsystems/host-plugin.md) |
 | 为什么重写掉了 Python 版本 | [decisions/0005](decisions/0005-native-rewrite.md) |
@@ -33,8 +34,9 @@ docs/
 ├── native-redesign.md   原生重写的完整设计提案（含数据模型与阶段）
 ├── roadmap.md           P0–P4 进度与判据
 ├── subsystems/
-│   ├── store.md         存储层契约
-│   ├── tools.md         工具面契约
+│   ├── store.md         存储层契约（版本 / 节点 / 任务与事件）
+│   ├── tools.md         工具面契约（11 个工具）
+│   ├── query.md         只读执行器契约（闸门 / 白名单 / 上限 / 超时代价）
 │   ├── skills.md        技能面契约
 │   └── host-plugin.md   Host 插件生命周期与环境变量
 └── decisions/

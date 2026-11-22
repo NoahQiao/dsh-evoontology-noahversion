@@ -13,12 +13,14 @@
 - [x] 装机验证：8 个工具 + `/evo` + 3 个技能在当前会话可见
 - [ ] **面板**：v0.2 曾实现（读 JSON 工作区），P2 以 `store.db` 为数据源重建
 
-## P1：用起来（下一步）
+## P1：用起来（v1.1.0，已交付）
 
-- [ ] `evo_query`——唯一只读执行器。`sqlite` / `csv` / `json` 三种 connector；authorizer 白名单（`SELECT` / `READ` / `FUNCTION` / `RECURSIVE`）；行数上限 100、单值 1 MB、5 s 超时
-- [ ] `evo_task_start` / `evo_task_finish`——任务闭环，写 `task` / `event` 表；轨迹真相是 session log，不自建轨迹文件
-- [ ] `ctx.systemPrompt.section` 注入一行状态（`本体 v3 · 12 术语 · 上次发布 2 天前`），正文按需检索
-- 判据：agent 建完一次语义层后，第二次分析同一份数据时**不读原始 schema** 也能写对查询
+- [x] `evo_query`——唯一只读执行器。`sqlite` / `csv` / `json` 三种源；authorizer 白名单（`SELECT` / `READ` / `FUNCTION` / `RECURSIVE`）；行数上限 100、单值 2 KB、5 s 超时（worker 线程 + `terminate()`）。契约见 [subsystems/query.md](subsystems/query.md)
+- [x] `evo_task_start` / `evo_task_finish`——任务闭环，写 `task` / `event` 表；轨迹真相是 session log，不自建轨迹文件
+- [x] `ctx.systemPrompt.section` 注入一行状态（`本体 v3 · 4 term · 2 mapping · 今天发布`），正文按需检索；无激活版本时不注入
+- [x] 离线自检：存储 15 项、插件 62 项、P1 面 55 项
+- [ ] **待实测**：判据「建完一次语义层后，第二次分析同一份数据时不读原始 schema 也能写对查询」需要一次真实的两轮对话来验证
+- 已知代价：被超时掐掉的 `sqlite` 查询会在 Host 进程里留一个只读句柄直到重启（见 [query.md §2.5](subsystems/query.md)）
 
 ## P2：看见
 

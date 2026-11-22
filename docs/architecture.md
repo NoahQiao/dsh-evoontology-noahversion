@@ -25,18 +25,21 @@
 ```
 ┌───────────────────────────────────────────────────────────────┐
 │  L4 surface   工具 evo_*   命令 /evo   技能 build/use/evolve   │
+│               提示行（systemPrompt.section，一行状态）           │
 ├───────────────────────────────────────────────────────────────┤
 │  L3 语义操作   commit · publish · revert · resolve · diff      │
+│               任务闭环 task_start / task_finish · 只读查询     │
 ├───────────────────────────────────────────────────────────────┤
 │  L2 不变量     接地校验 · patch 幂等 · 单 active · 版本不可变   │
 ├───────────────────────────────────────────────────────────────┤
 │  L1 存储      node / edge / evidence / version（node:sqlite）  │
 ├───────────────────────────────────────────────────────────────┤
-│  L0 数据源    宿主原生工具（读文件、跑只读 SQL）——不属于本插件  │
+│  L0 数据源    evo_query：sqlite 只读 / csv / json 装载          │
+│               （worker 线程执行，可被掐断）                      │
 └───────────────────────────────────────────────────────────────┘
 ```
 
-箭头只能往下。L0 之所以「不属于本插件」，是因为 P0 不接管数据访问：**探测数据用宿主已有的能力，本插件只保存探测的结论**。等 P4 引入 `DataSourceConnector` 时，L0 才会长在本插件里。
+箭头只能往下。P1 起 L0 由本插件接管（`lib/source.js` + `lib/query.js`），因为「证据必须来自能被查到的数据」这条要求不能寄望于宿主恰好有合适工具：执行器只有一条只读路径，authorizer 白名单就是它的全部权限。
 
 ---
 
@@ -44,10 +47,13 @@
 
 | 文件 | 职责 | 不该做的事 |
 |---|---|---|
-| `index.js` | 把三张座位接起来，管生命周期 | 不含业务逻辑 |
-| `lib/store.js` | 建表、校验、事务、版本状态机 | 不打印、不格式化给人看 |
+| `index.js` | 把四张座位接起来（工具 / 命令 / 技能 / 提示行），管生命周期 | 不含业务逻辑 |
+| `lib/store.js` | 建表、校验、事务、版本状态机、任务与事件 | 不打印、不格式化给人看 |
 | `lib/schema.js` | 四类节点的 body JSON Schema + 校验器 | 不碰数据库 |
-| `lib/tools.js` | 八个工具的入参声明与人类可读渲染 | 不直接拼 SQL（除只读检索） |
+| `lib/source.js` | 数据源识别与装载（sqlite 只读 / csv / json） | 不执行查询 |
+| `lib/query.js` | 语句闸门、worker 超时、行/值上限、文本表 | 不做单位换算 |
+| `lib/query-worker.js` | 线程内实际执行 + authorizer 白名单 | 不接触语义层 |
+| `lib/tools.js` | 十一个工具的入参声明与人类可读渲染 | 不直接拼 SQL（除只读检索） |
 | `lib/command.js` | `/evo` 的子命令分派 | 不实现只有工具才做得好的事（如导出写文件） |
 | `lib/skills.js` | 技能发现（前 matter 解析 + on-demand 正文） | 不解释工具清单 |
 | `lib/paths.js` | 环境变量 → 路径 | 不建目录（写入处才建） |
@@ -55,12 +61,12 @@
 
 ---
 
-## 4. 三条运行时数据流
+## 4. 四条运行时数据流
 
 **构建（build）**
 
 ```
-用户给数据 → 宿主工具探测（SQL/文件读取）→ 结论
+用户给数据 → evo_query 探测（MIN/MAX/COUNT DISTINCT）→ 结论
    → evo_commit(patch{evidence, term, mapping, constraint}) → draft vN
    → 人看 evo_history 的 diff → evo_publish → active vN
 ```
@@ -68,16 +74,25 @@
 **使用（use）**
 
 ```
-用户提问 → evo_resolve(intent) → 命中 mapping/constraint/skeleton
-   → 宿主工具跑只读查询（带单位换算）→ 回答 + 说明依赖哪个版本
+用户提问 → evo_task_start(把问题钉在 active 版本上) → evo_resolve(intent)
+   → evo_query 跑只读查询（带单位换算）→ 回答 + 说明依赖哪个版本
+   → evo_task_finish(答案)
 ```
 
-**修正（evolve）**
+**纠正（correct）**
 
 ```
 发现分歧（记录与数据不符 / 两个答案口径不同）
    → 新 evidence（重跑 probe）→ evo_commit 修正 patch → draft vN+1
    → 人确认 → evo_publish（或 evo_revert 一句话回退）
+```
+
+**提示（ambient）**
+
+```
+每次会话组装系统提示 → section('evoontology-status')
+   → 读缓存的 status（TTL 1.5 s）→ 一行：「本体 v3 · 4 term · 2 mapping …」
+   → 没有激活版本时不注入任何文字
 ```
 
 ---
@@ -88,7 +103,8 @@
 2. **语义必须接地**：`term` / `mapping` / `constraint` 在 commit 时就必须引用存在的 `evidence`，不是等到 publish 才查。理由：畸形中间态越少越好。
 3. **版本不可变 + 单 active**：`version.status ∈ {draft, active, retired}`，靠部分唯一索引 `version_single_active` 让数据库保证「只有一个 active」。回退只改一行 status，因此是零成本的。
 4. **数据不出本机**：证据只存 `source` + `probe` + `result` 摘要，不存样本行。导出目录不进版本库。
-5. **读与写分开**：P0 里所有写路径只有三条（commit / publish / revert）。`evo_query` 这类只读执行器要到 P1 才出现，且永远只读——语义的证据如果可以被写伪造就失去意义。
+5. **读与写分开**：所有写语义的路径只有三条（commit / publish / revert）。`evo_query` 是唯一执行器，且永远只读——语义的证据如果可以被写伪造就失去意义。它的权限由 authorizer 白名单表达，不靠自觉。
+6. **不进系统提示正文**：系统提示里只有一行状态（版本号、计数、发布距今），语义内容一律按需检索。理由是提示是常驻成本，而语义层可以很大。
 
 ---
 

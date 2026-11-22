@@ -60,8 +60,8 @@ const ctx = {
 
 apply(ctx)
 
-check('registers 8 tools', tools.size === 8, [...tools.keys()])
-check('tool names match the design', ['evo_status', 'evo_browse', 'evo_resolve', 'evo_history', 'evo_commit', 'evo_publish', 'evo_revert', 'evo_export'].every((n) => tools.has(n)))
+check('registers 11 tools', tools.size === 11, [...tools.keys()])
+check('tool names match the design', ['evo_status', 'evo_browse', 'evo_resolve', 'evo_history', 'evo_commit', 'evo_publish', 'evo_revert', 'evo_export', 'evo_query', 'evo_task_start', 'evo_task_finish'].every((n) => tools.has(n)))
 check('registers the /evo command', command !== null && command.name === 'evo')
 check('registers a skill provider', typeof providerFactory === 'function')
 
