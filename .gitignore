@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# DSH plugin build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# EvoOntology runtime workspace (per-project state, never committed)
+.evoontology/
+
+# Local env
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
