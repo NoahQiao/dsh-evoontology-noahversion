@@ -1,42 +1,14 @@
 # DSH bundle layer for the EvoOntology semantic layer.
 #
-# Row order matters: the skills row runs `apply` first, which stages the
-# vendored Python core into $DSH_HOME/evoontology/python. The MCP row then
-# starts `python -m evoontology.runtime.mcp_server` from that staged directory,
-# so the child process needs neither PYTHONPATH nor a project checkout.
+# One row. Everything lives in this package: the store is a SQLite file opened
+# in-process by the Host plugin, so there is no child process, no interpreter
+# requirement, and no project checkout to point at.
+#
+# State location, all overridable by environment variable:
+#   store.db     <DSH_HOME>/evoontology/store.db     DSH_EVOONTOLOGY_STORE
+#   runs/        <DSH_HOME>/evoontology/runs/        DSH_EVOONTOLOGY_HOME
+#   exports/     <DSH_HOME>/evoontology/exports/     DSH_EVOONTOLOGY_HOME
 - insert:
-    - id: evoontology-skills
+    - id: evoontology
       name: '@noah/dsh-evoontology'
       config: {}
-
-    - id: evoontology-mcp
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: evo
-        transport: stdio
-        # Override the interpreter without editing this file:
-        #   set DSH_EVOONTOLOGY_PYTHON=C:\path\to\python.exe
-        command: !!js process.env.DSH_EVOONTOLOGY_PYTHON || 'python'
-        args:
-          - '-m'
-          - 'evoontology.runtime.mcp_server'
-          - '--store'
-          # Fallback workspace, used only when a tool call omits `workspace`.
-          # Every evo tool accepts an explicit absolute workspace path.
-          - !!js dshHomePath('evoontology/workspace')
-        cwd: !!js dshHomePath('evoontology/python')
-        env:
-          PYTHONIOENCODING: utf-8
-          PYTHONUTF8: '1'
-        # Building or evolving an ontology runs real queries and rewrites the
-        # workspace, so allow well past a single fetch.
-        toolCallTimeoutMs: 300000
-        startupTimeoutMs: 30000
-        # A missing Python must not take the whole profile down; the row stays
-        # retryable and the failure surfaces on first tool call.
-        failOnStartupError: false
-        reconnect:
-          enabled: true
-          initialDelayMs: 500
-          maxDelayMs: 30000
-          maxAttempts: 10

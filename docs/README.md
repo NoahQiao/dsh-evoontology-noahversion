@@ -1,35 +1,47 @@
-# 文档索引
+# 文档
 
-本仓库按 DeepSeek Harness（下称 DSH）上游仓库的惯例写文档：**每个子系统一篇契约文档，字段与边界先写清，再动代码**。文档是设计的唯一真相，代码是文档的实现；两者不一致时先改文档，再改代码。
+本目录按 DSH 上游仓库的惯例组织：**每个子系统一篇四段式契约文档**（定位与归属 / 契约 / 扩展位 / 不做），取舍写 ADR，进度写路线图。
+
+先写清楚、再写代码。与代码不一致时，契约文档优先，代码是 bug。
 
 ## 怎么读
 
-| 想干什么 | 读哪篇 |
+| 你想知道 | 读这篇 |
 |---|---|
-| 一页看懂这个插件由哪些层组成、运行时发生了什么 | [architecture.md](architecture.md) |
-| 想知道 29 个 `mcp__evo__*` 工具从哪来 | [subsystems/mcp-bridge.md](subsystems/mcp-bridge.md) |
-| 想知道 agent 怎么发现「建本体 / 演进本体 / 浏览本体」 | [subsystems/skills.md](subsystems/skills.md) |
-| 想知道 `index.js` 为什么要往 `$DSH_HOME` 铺文件 | [subsystems/host-plugin.md](subsystems/host-plugin.md) |
-| 想知道上游核心改没改、怎么升级 | [subsystems/upstream-core.md](subsystems/upstream-core.md) |
-| 想知道侧边栏面板怎么注册、数据怎么到浏览器 | [subsystems/client-sidebar.md](subsystems/client-sidebar.md) |
-| 想知道当初为什么这么选 | [decisions/](decisions/README.md) |
-| 想知道哪些做完了、哪些还没做 | [roadmap.md](roadmap.md) |
-| 想看「如果不受迁移成本约束，原生插件该怎么设计」 | [native-redesign.md](native-redesign.md) |
+| 这东西是什么、为什么这样分层 | [architecture.md](architecture.md) |
+| 语义存在哪、版本怎么保证不自相矛盾 | [subsystems/store.md](subsystems/store.md) |
+| 模型能调什么、返回长什么样 | [subsystems/tools.md](subsystems/tools.md) |
+| 技能怎么被注册、为什么只有三份 | [subsystems/skills.md](subsystems/skills.md) |
+| 插件怎么接进宿主、环境变量有哪些 | [subsystems/host-plugin.md](subsystems/host-plugin.md) |
+| 为什么重写掉了 Python 版本 | [decisions/0005](decisions/0005-native-rewrite.md) |
+| 接下来做什么 | [roadmap.md](roadmap.md) |
+| 更远的形态（提案，非现状） | [native-redesign.md](native-redesign.md) |
 
-> `native-redesign.md` 是**提案**，不是契约：它描述的是目标形态，与当前代码不一致是正常的。契约文档（`architecture.md` 与 `subsystems/*`）描述现状，两者冲突时以契约文档为准。
+## 约定
 
-## 文档约定
+1. **四段式**：定位与归属 → 契约 → 扩展位 → 不做。第四节必须写，它是防止文档变成愿望清单的唯一手段。
+2. **状态标注**：ADR 顶部写「已实现 / 提案 / 已取代」。`native-redesign.md` 是提案，与代码不一致是正常的。
+3. **只写契约与边界**：生成式的清单（配置枚举、工具全表）由代码定义，不在这里重复。
+4. **验证分开写**：已验证的和没验证的分段，不要把「跑通一次」写成「已验证」。
 
-沿用 DSH 上游 `docs/subsystems/*.md` 的结构，每篇固定四段：
+## 目录
 
-1. **定位与归属**——这个子系统是什么、属于谁、依赖谁。
-2. **契约**——字段、方法、事件、失败语义。凡是代码要以某个形状存在的地方，这里写死。
-3. **扩展位**——别人可以往哪挂东西；以及挂上去之后的优先级与冲突规则。
-4. **不做**——明确写出来的非目标。这条最重要：没有「不做」，边界会在一轮轮迭代里被吃掉。
-
-## 与其他文档的关系
-
-- `README.md`：面向使用者（怎么装、怎么开、怎么卸）。
-- `docs/`（本目录）：面向维护者（为什么这么设计、改动会牵动什么）。
-- `python/UPSTREAM.txt`：面向溯源（当前 vendored 的是上游哪个版本）。
-- `skills/*/references/*.md`：上游技能自带的参考资料，属于**上游内容**，由 `scripts/sync-from-upstream.ps1` 覆盖，不要手改。
+```
+docs/
+├── README.md            你在这里
+├── architecture.md      分层、组件职责、数据流、边界
+├── native-redesign.md   原生重写的完整设计提案（含数据模型与阶段）
+├── roadmap.md           P0–P4 进度与判据
+├── subsystems/
+│   ├── store.md         存储层契约
+│   ├── tools.md         工具面契约
+│   ├── skills.md        技能面契约
+│   └── host-plugin.md   Host 插件生命周期与环境变量
+└── decisions/
+    ├── 0001 … 0002      已取代（MCP 桥 + 铺 Python 核心）
+    ├── 0003             技能必须由 JS 注册（仍成立）
+    ├── 0004             面板坐右侧栏（座位已定，P2 实现）
+    ├── 0005             原生重写
+    ├── 0006             单文件 SQLite
+    └── 0007             接地在 commit 时校验
+```

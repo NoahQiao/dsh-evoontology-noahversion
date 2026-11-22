@@ -1,261 +1,58 @@
 ---
 name: build-ontology
-description: Build an initial ontology from data and analytical goals, prepare relevant questions from supplied needs and project history, and automatically show the evidence-grounded result.
+description: 给一份数据集建立/扩充本体层（语义层）。当用户要在某个库、CSV 或表上"反复做分析、口径要稳"，或明确说"建本体 / 建语义层 / 把这些列说清楚"时使用。流程是：先探测真实数据，再把结论作为带证据的节点提交成版本。
+whenToUse: 用户提出要为一个数据集建立语义层，或现有语义层缺术语/映射/约束需要补充。
 ---
 
-# Build Ontology Layer
+# 建本体
 
-Construct the first version of an ontology layer for a target workload.
+本体层不是文档，是**可以被工具检索、被版本控制、被证据约束的资产**。所以这份技能只讲三件事：先看什么、记什么、怎么算记对了。
 
-The goal is to discover reusable, evidence-grounded analytical knowledge
-from questions and data-environment exploration.
+## 一、先探测，别先命名
 
-The semantic schema defines the structure of the ontology layer.
-The Builder Agent discovers and populates semantic content under this
-schema.
+列名会骗人。`pkgW` 不一定是瓦，`gpuPct` 可能超过 100。**任何术语在记录之前，必须有一条来自真实数据的证据**。
 
----
+探测用宿主自带的工具即可（读文件、跑只读 SQL、看样本行、算 min/max/去重值）。每一条你想记下来的判断，都先问：
 
-# Before Starting
+1. 这个值域和列名一致吗？（算 MIN/MAX/AVG/COUNT DISTINCT）
+2. 这个单位能被数据本身证实吗？（比如几千的整数 + 列名 W → 更可能是 mW）
+3. 每个取值代表什么？（枚举列的 distinct 值 + 频次）
+4. 这份数据和业务对象怎么对上？（一行 = 什么？主键是什么？）
 
-Read:
+拿不到证据的猜测可以记，但必须记成 `limitation`，不能记成 `constraint`。
 
-- references/ontology-schema.md
-- references/ontology-interaction-protocol.md
-- references/ontology-layer-data-boundary.md
-- references/project-context.md
-- references/workload-experience.md
+## 二、记什么：四类节点
 
-The generated ontology layer MUST follow ontology-schema.md.
+| kind | 记什么 | 必须包含 |
+|---|---|---|
+| `evidence` | 一条可复跑的观测 | `source`（哪个数据源/表）、`probe`（你跑的查询或命令）、`result`（结论摘要，不是全量数据） |
+| `term` | 一个业务概念 | `definition`、单位或口径、`evidence` |
+| `mapping` | 字段 → 术语 | `table`、`column`、`term`、必要时 `transform`（如 `value/1000 → W`）、`evidence` |
+| `constraint` | 取值规则 | `kind`（unit / range / enum / ratio / pattern）、`subject`（作用在哪个 term 或 mapping 上）、`value`、`evidence` |
 
-The semantic interaction assumptions MUST follow
-ontology-interaction-protocol.md.
+节点 id 用稳定前缀：`ev.` / `t.` / `m.` / `c.`，后面跟业务名（`t.package_power`、`m.mon_4b.pkgW`）。id 是版本之间做 diff 的唯一依据，**不要用序号**。
 
-Do not create alternative semantic object structures.
+关系用边，不要用节点：`association` / `hierarchy` / `composition` / `equivalence` / `derivation`。边必须是两个已存在节点之间。
 
-All dataset access, split usage, freezing, and evaluation boundaries MUST
-follow ontology-layer-data-boundary.md.
+## 三、怎么算记对了
 
----
+- **接地**：`term`、`mapping`、`constraint` 的 `body.evidence` 必须引用同版本的 `evidence` 节点 id。不接地的 patch 会被 `evo_commit` 直接拒绝——这不是形式主义，它保证任何结论都能被复验。
+- **一个 patch 一件事**：一次 commit 只做一个连贯的判断（"把 mon_4b 的 8 个列映射清楚"）。这样 publish 前的 diff 可读，出错时能精确回退。
+- **幂等**：同样的 patch 重复提交不会产生新版本，所以重试是安全的。
+- **提交 ≠ 生效**：`evo_commit` 只产生草稿；`evo_publish` 才切换线上语义。构建阶段先提交、看 diff、再发布。
 
-# Builder Workflow
+## 四、顺序
 
-## Step 0 鈥?Initialize Build Context
+1. `evo_status`：有没有激活版本？已有就先在它上面增量改，不要凭空重建。
+2. 探测数据（宿主工具），**边探边记**：先 3-5 条 evidence，再第一批 term / mapping。
+3. `evo_commit` 一个 patch（含 summary 与 limitations）→ 读返回的计数。
+4. 继续提交直到覆盖了这份数据的主要列和主要口径。
+5. `evo_publish` 激活；`evo_export` 导出一份 Markdown 供人评审。
 
-Before construction, establish the project context and data boundary.
+## 五、不要做
 
-If an active semantic version already exists, do not rebuild or overwrite it. Direct the user to evolution unless they explicitly request a new workspace or destructive reinitialization.
-### 1. Resolve context
-
-If `.evoontology/project.json` exists, load and reuse the persisted project
-context. Do not re-infer or overwrite it unless the user explicitly requests
-reconfiguration.
-
-Otherwise, determine the project mode:
-
-- **Fixed-Split Mode:** a predefined dataset split and external Evaluator are
-  available.
-- **Rolling-Trajectory Mode:** the ontology layer is initialized from a seed
-  workload and later evolves from accumulated Task trajectories.
-
-Resolve the target data source and analytical goal. Use the workload preparation
-workflow in references/workload-experience.md: supplied questions, relevant
-project history, then evidence-grounded generated questions to fill coverage gaps.
-A user-provided question file is optional. Resolve the workload source and Evaluator. When Ground
-Truth exists, register its location for Evaluator use only; Builder and Evolver
-must not read it.
-
-### 2. Establish data boundary
-
-For **Fixed-Split Mode**:
-
-- create or load the frozen split defined by
-  `references/ontology-layer-data-boundary.md`;
-- identify the evolution-training, validation, and held-out subsets;
-- expose only the permitted construction/evolution workload to the Builder.
-
-For **Rolling-Trajectory Mode**:
-
-- use the resolved seed workload and target data environment for initial
-  construction;
-- do not create Fold A/B or a validation reserve during initial build.
-
-### 3. Confirm and persist
-
-Present a concise summary of the data source, analytical scope and evaluation
-boundary. Reuse explicit authorization already in the request; ask only when a
-material source or business-definition ambiguity remains. Persist context using
-mcp__evo__configure_ontology_project. Do not require users to choose internal mode names.
-Later evolution runs must reuse this context rather than infer it again.
-
-**Stage Output:** A resolved and persisted project context and data boundary.
-
-## Step 1 鈥?Workload-Guided Probing
-
-### Understand workload requirements
-
-Read only the workload permitted by the persisted project boundary: the frozen construction split in Fixed-Split Mode, or the seed workload in Rolling-Trajectory Mode.
-
-Identify:
-
-- recurring analytical dimensions;
-- concepts and metrics required for reasoning;
-- relationships needed between concepts;
-- evidence required to answer questions reliably.
-
-Create a workload coverage map.
-
-The coverage map is a construction artifact, not part of the semantic
-layer. Its purpose is to ensure important analytical requirements are not
-lost during ontology layer construction.
-
-Start semantic construction from analytical requirements. In a cold start,
-metadata inspection may first help propose grounded analytical questions; it must
-not turn physical table structure into unsupported business semantics.
-
-### Design semantic requirements
-
-Translate workload requirements into semantic objects defined by
-ontology-schema.md.
-
-Determine:
-
-- required Terms;
-- required Mappings;
-- useful Relations using one of the five controlled `relation_type` values
-  defined in ontology-schema.md: association / hierarchy / composition /
-  equivalence / derivation;
-- necessary Constraints.
-
-For each Relation, classify the relationship type using the decision
-priority defined in ontology-schema.md. Do not use free-text types such as
-`affects` or `belongs_to`.
-
-Keep the ontology layer minimal and reusable. Do not create objects without
-a clear workload purpose.
-
-### Explore data-environment evidence
-
-Use available read-only tools to inspect the target data environment,
-including databases, structured files, documents, metadata, and other
-supported data sources.
-
-For each semantic requirement:
-
-- identify plausible candidate data sources, structures, and elements based
-  on structural metadata, relationships, workload terms, and representative
-  content;
-- inspect and compare candidates' granularity, identifiers, fields,
-  relationships, metadata, and representative content;
-- do not stop at the first plausible match when multiple candidates remain
-  semantically possible;
-- stop candidate expansion when remaining candidates lack support from the
-  workload, data structure, metadata, representative values, or observed
-  content;
-- verify the selected grounding's meaning, scope, and granularity;
-- record supporting evidence, including why competing candidates were not
-  selected when the distinction is analytically important.
-
-Semantic objects must be grounded in reproducible observations from the
-target data environment. Do not infer unsupported concepts from external
-knowledge.
-
-When multiple data sources or elements are plausible groundings for the same
-analytical concept, document their distinct semantic roles, granularity,
-scope, and applicability conditions.
-
-Use Mapping to connect analytical concepts to concrete data sources,
-structures, or elements. Use Constraint to record data-grounded applicability
-conditions, value interpretations, and business rules. Use Relation to record
-semantic connections between Terms. Use Evidence to record the reproducible
-observations supporting these semantic claims.
-
-**Stage Output:** Candidate semantic objects and their data-grounded evidence.
-
----
-
-## Step 2 鈥?Evidence-Grounded Commitment
-
-### Generate ontology layer
-
-Create semantic objects according to ontology-schema.md:
-
-- Term;
-- Mapping;
-- Relation;
-- Constraint;
-- Evidence.
-
-Every active semantic object must be traceable to:
-
-- a workload requirement;
-- data-environment evidence.
-
-The ontology layer should preserve the workload coverage map while storing
-only validated semantic knowledge.
-
-Semantic objects MUST contain only the fields defined in
-ontology-schema.md. Do not add query-generation instructions, SQL templates,
-procedural reasoning steps, or task-specific solution strategies. Do not
-encode such prohibited content inside schema-defined free-text fields as a
-workaround.
-
-Relation objects MUST use one of the five controlled `relation_type` values.
-Describe the connection semantically rather than as a query template.
-
-Constraint objects MUST include suitable `trigger_keywords` so that relevant
-constraints can be discovered at runtime.
-
-### Validate ontology layer
-
-Validate that:
-
-- each important analytical dimension in the workload coverage map is
-  represented by grounded semantic objects where valid grounding exists;
-- Mappings correspond to real data structures;
-- Relations and Constraints make required semantic relationships,
-  applicability conditions, value interpretations, or business definitions
-  explicit;
-- Evidence can be reproduced;
-- semantic objects can be accessed through the semantic interaction protocol;
-- semantic objects contain only schema-defined fields.
-
-Coverage validation confirms semantic availability and grounding; it does
-not by itself guarantee successful task execution.
-
-If no valid grounding exists, record a coverage gap or known limitation. Do
-not fabricate semantic objects.
-
-Revise unsupported, ambiguous, incomplete, or schema-invalid objects.
-
-### Publish
-
-Publish the initial ontology-layer version with:
-
-- semantic objects and evidence;
-- known limitations;
-- build metadata;
-- project mode and data-boundary metadata;
-- split identifier when using Fixed-Split Mode;
-- seed-workload source when using Rolling-Trajectory Mode.
-
-Complete publication through the `evo` MCP tools (pass the absolute
-`.evoontology/` path as `workspace`; do not run `python -m evoontology...`) in
-this order:
-
-1. `mcp__evo__save_version` 鈥?write `ontology_v0`'s five record files;
-2. `mcp__evo__annotate_ontology_version` 鈥?save a summary, limitations and question-to-object links;
-3. `mcp__evo__publish_ontology_build` 鈥?validate, activate, initialize evolution state and
-   automatically render/open the Results & questions explorer.
-
-If the user requests task demonstrations, run representative public questions
-through the task recording tools and refresh mcp__evo__visualize_ontology afterward. Do not
-present structural validation as proof of task accuracy. On presentation failure,
-report the successful publication and retry rendering; do not rebuild the ontology.
-
-Initial build is not an evolution run. Evolution-history fields such as
-`last_evolution_trajectory` and `last_evolution_time` must remain unset until
-the first evolution run completes.
-
-**Stage Output:** An activated initial ontology layer with initialized
-evolution-trigger state.
+- 不要为了"看起来完整"编造 constraint。空着比编错好。
+- 不要把整份数据或样本行写进 `result`——只写能支撑结论的摘要（原则是：数据不出本机，导出的都是语义）。
+- 不要在没跑过的情况下写 `probe`。
+- 不要用 `relation` 当节点 kind（已废弃，用边）。
+- 一个数据集类目数超过几十列时，不要一次全记：先记**用户真正会问的那几列**，其余留待使用中补充。

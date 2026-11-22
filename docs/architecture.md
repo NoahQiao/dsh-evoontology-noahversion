@@ -1,125 +1,113 @@
 # 架构
 
-本插件把 [ruc-datalab/EvoOntology](https://github.com/ruc-datalab/EvoOntology) 的自进化本体层（evolvable ontology layer）接入 DSH，让它成为 DSH 会话里可直接调用的能力。本文是改动任何文件前先读的那一页。
+一句话：**一个 SQLite 文件，八个工具，一条命令，三个技能**。没有子进程，没有 Python，没有 MCP 桥。
 
-## 一句话
+这份文档描述的是**已经实现的 P0**。设计意图与更远的阶段见 `native-redesign.md`（提案），本文件与代码不一致时以本文件为准。
 
-上游核心是**零依赖 Python 程序 + 手写 JSON-RPC 的 MCP 服务**；DSH 原生消费 MCP，所以插件的主要工作不是「重写本体引擎」，而是**把上游正确地放进 DSH 的装配模型里**：一条 MCP 行提供 29 个工具，一个 Host 插件把 3 个技能注册进技能目录，并提供一个只读的右侧栏面板。
+---
 
-## 分层
+## 1. 定位与归属
 
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ 浏览器（DSH Web Client）                                              │
-│   技能目录、工具调用卡片                                              │
-│   client.js：右侧栏「EvoOntology」标签页（只读视图）                  │
-└───────────────────────────────┬──────────────────────────────────────┘
-                                │ Connection RPC（DSH 内建）
-                                │ 面板读数据：remote.commands → /evo status
-┌───────────────────────────────▼──────────────────────────────────────┐
-│ Host（Cordis 插件树）                                                 │
-│                                                                      │
-│  @noah/dsh-evoontology（本仓库 index.js，Host 插件）                  │
-│    · stagePython()  python/  ──copy──▶  $DSH_HOME/evoontology/python  │
-│    · ctx.skills.registerProvider()  3 个技能进技能目录                │
-│    · ctx.commands.register()  evo 命令：只读扫工作区，回 JSON          │
-│                                                                      │
-│  @deepseek-ai/dsh-mcp-client（官方行，我们只填 config）               │
-│    · stdio 拉起 python -m evoontology.runtime.mcp_server              │
-│    · 工具自动命名 mcp__evo__<rawName>，共 29 个                       │
-└───────────────────────────────┬──────────────────────────────────────┘
-                                │ JSON-RPC over stdio
-┌───────────────────────────────▼──────────────────────────────────────┐
-│ 上游核心（python/evoontology，零依赖，版权归上游）                    │
-│    ontology/  runtime/  evolution/  trajectory/  evaluation/          │
-│    trigger/  visualization/  workflow.py  workspace.py                │
-└───────────────────────────────┬──────────────────────────────────────┘
-                                │ 读写
-                       $DSH_HOME/evoontology/workspace
-                       （.evoontology 容器：版本、轨迹、证据、
-                         演化运行记录、可视化 HTML）
+| 问题 | 回答 |
+|---|---|
+| 这个插件解决什么 | agent 面对陌生数据时的「agent–data gap」：列名不等于含义，同一个指标在两份数据里口径不同，答案对不上却没人记得为什么 |
+| 它产出什么 | 一个**版本化的语义层**：术语、字段映射、约束、以及支撑它们的证据。可以被检索、被 diff、被回退 |
+| 它不做什么 | 不做 ETL、不做数据源同步、不做查询引擎、不做自动应答。它只提供「口径从哪来」 |
+| 它住在哪 | 宿主进程内的 Host 插件；真相是 `$DSH_HOME/evoontology/store.db` |
+| 谁在用它 | 主 agent 通过 `evo_*` 工具；用户通过 `/evo` 命令；技能通过「何时该用」引导前两者 |
+
+**为什么不做成一个独立的语义服务**：语义层每个会话都在用，但每次用的数据量很小（几十到几百个节点）。跨进程边界换来的隔离收益，抵不过六层失败面（解释器、依赖、路径、协议、超时、版本）的代价。这是一个有意的取舍，不是偷懒。
+
+---
+
+## 2. 分层
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│  L4 surface   工具 evo_*   命令 /evo   技能 build/use/evolve   │
+├───────────────────────────────────────────────────────────────┤
+│  L3 语义操作   commit · publish · revert · resolve · diff      │
+├───────────────────────────────────────────────────────────────┤
+│  L2 不变量     接地校验 · patch 幂等 · 单 active · 版本不可变   │
+├───────────────────────────────────────────────────────────────┤
+│  L1 存储      node / edge / evidence / version（node:sqlite）  │
+├───────────────────────────────────────────────────────────────┤
+│  L0 数据源    宿主原生工具（读文件、跑只读 SQL）——不属于本插件  │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-`client.js` 与 `evo` 命令读的是**同一棵目录树**，不经过 MCP 子进程：面板只读，解析 JSON 比维护一条 MCP 通道便宜，也不必让浏览器持有 Python 侧的句柄。
+箭头只能往下。L0 之所以「不属于本插件」，是因为 P0 不接管数据访问：**探测数据用宿主已有的能力，本插件只保存探测的结论**。等 P4 引入 `DataSourceConnector` 时，L0 才会长在本插件里。
 
-## 组件与职责
+---
 
-| 组件 | 文件 | 职责 | 不负责 |
-|---|---|---|---|
-| `@noah/dsh-evoontology` | `index.js` | 铺核心、注册技能 provider、注册 `evo` 只读命令 | 提供工具、渲染 UI、写入工作区 |
-| 上游 MCP 行 | `cordis.patch.yml` | 启动 MCP 子进程、暴露 29 个工具、超时与重连 | 技能、界面 |
-| 上游核心 | `python/evoontology/` | 本体建模、版本化、演化循环、评估、可视化 | 与 DSH 的任何耦合 |
-| 上游技能 | `skills/*/SKILL.md` | 教 agent 在什么时机调哪些工具 | 执行本体逻辑 |
-| 侧边栏面板 | `client.js` | 右栏标签页里展示版本/计数/最近 run/探索器路径 | 写数据、调 MCP 工具、内嵌 HTML |
+## 3. 组件职责
 
-## 激活顺序（重要）
+| 文件 | 职责 | 不该做的事 |
+|---|---|---|
+| `index.js` | 把三张座位接起来，管生命周期 | 不含业务逻辑 |
+| `lib/store.js` | 建表、校验、事务、版本状态机 | 不打印、不格式化给人看 |
+| `lib/schema.js` | 四类节点的 body JSON Schema + 校验器 | 不碰数据库 |
+| `lib/tools.js` | 八个工具的入参声明与人类可读渲染 | 不直接拼 SQL（除只读检索） |
+| `lib/command.js` | `/evo` 的子命令分派 | 不实现只有工具才做得好的事（如导出写文件） |
+| `lib/skills.js` | 技能发现（前 matter 解析 + on-demand 正文） | 不解释工具清单 |
+| `lib/paths.js` | 环境变量 → 路径 | 不建目录（写入处才建） |
+| `skills/*/SKILL.md` | 何时用、判据、禁止事项 | 不复述工具名与参数 |
 
-`cordis.patch.yml` 里两行的顺序是刻意安排的，不是排版：
+---
 
-1. `evoontology-skills`（本插件）先 `apply`，把 `python/` 铺到 `$DSH_HOME/evoontology/python`。
-2. `evoontology-mcp` 后激活，其 `cwd` 由 `!!js dshHomePath('evoontology/python')` 求值。
+## 4. 三条运行时数据流
 
-如果顺序反过来，MCP 行的 `cwd` 会指向一个还没铺好的目录，子进程直接起不来。这条依赖没有类型系统保护，只能靠注释与本文维持。
+**构建（build）**
 
-## 运行时数据流
-
-### 建本体（build）
-
-```text
-用户：给我这个库建本体
-  → agent 命中 skill build-ontology（技能目录自动暴露描述）
-  → 读 SKILL.md，按其中流程依次调用
-      mcp__evo__configure_ontology_project
-      mcp__evo__prepare_ontology_workload
-      mcp__evo__save_version
-      mcp__evo__publish_ontology_build
-  → 上游把版本写进 workspace，返回 run 记录
-  → 工具结果回到会话；publish 会产出可视化 HTML
+```
+用户给数据 → 宿主工具探测（SQL/文件读取）→ 结论
+   → evo_commit(patch{evidence, term, mapping, constraint}) → draft vN
+   → 人看 evo_history 的 diff → evo_publish → active vN
 ```
 
-### 演进（evolve）
+**使用（use）**
 
-```text
-mcp__evo__start_evolution_run    开一轮 run，冻结轮次预算
-  → start_ontology_task         把问题钉到某个语义版本
-  → execute_ontology_query      跑真实查询（SQLite 只读回放）
-  → record_ontology_task_event  记录真实工具调用与结果
-  → finish_ontology_task        落 trajectory
-  → begin/record_evolution_round  诊断→归因→补丁→评测循环
-  → accept_evolution / record_evolution_evaluation / extend_evolution_budget
-  → finalize_evolution_run      终态 + 结局浏览器
+```
+用户提问 → evo_resolve(intent) → 命中 mapping/constraint/skeleton
+   → 宿主工具跑只读查询（带单位换算）→ 回答 + 说明依赖哪个版本
 ```
 
-### 使用（use）
+**修正（evolve）**
 
-```text
-browse_semantics   按自然语言找概念（term / mapping / relation / constraint）
-resolve_semantics  把概念解析到落点对象与 SQL
+```
+发现分歧（记录与数据不符 / 两个答案口径不同）
+   → 新 evidence（重跑 probe）→ evo_commit 修正 patch → draft vN+1
+   → 人确认 → evo_publish（或 evo_revert 一句话回退）
 ```
 
-### 旁路观察（panel）
+---
 
-```text
-用户点右栏「EvoOntology」
-  → client.js 取 sessionId，调 remote.commands.execute(sessionId, '/evo status', [])
-  → Host 的 evo 命令扫 workspace 目录，把版本/计数/最近 run/探索器路径写成 JSON
-  → 面板渲染；点「刷新」重跑一次
-```
+## 5. 关键边界
 
-面板与 agent 的对话**互不阻塞**：它不占工具表、不占 MCP 连接，也不写工作区。
+1. **上游语义零改写**：上游 ruc-datalab/EvoOntology 的节点类型与「证据驱动版本」的思路被保留，但实现是重写的——因为它的 27 个 ops 是内部状态机的 RPC 暴露，不是稳定契约。
+2. **语义必须接地**：`term` / `mapping` / `constraint` 在 commit 时就必须引用存在的 `evidence`，不是等到 publish 才查。理由：畸形中间态越少越好。
+3. **版本不可变 + 单 active**：`version.status ∈ {draft, active, retired}`，靠部分唯一索引 `version_single_active` 让数据库保证「只有一个 active」。回退只改一行 status，因此是零成本的。
+4. **数据不出本机**：证据只存 `source` + `probe` + `result` 摘要，不存样本行。导出目录不进版本库。
+5. **读与写分开**：P0 里所有写路径只有三条（commit / publish / revert）。`evo_query` 这类只读执行器要到 P1 才出现，且永远只读——语义的证据如果可以被写伪造就失去意义。
 
-## 关键边界
+---
 
-1. **上游核心零改动。** `python/` 是从上游复制来的字节级副本，任何修改都会在下次 `scripts/sync-from-upstream.ps1` 时被覆盖。要改行为只能改 DSH 侧（`index.js`、`cordis.patch.yml`、`skills/` 里的改写在同步脚本中做）。
-2. **路径不写死。** 仓库可能被换目录、被 link 安装、被复制到别的机器；因此配置里只用 `!!js dshHomePath(...)` 与 `process.env.DSH_EVOONTOLOGY_PYTHON`，绝不出现 `D:\...` 或 `C:\Users\...`。
-3. **数据只在本机。** 上游不联网；工作区落在 `$DSH_HOME`，不进用户仓库、不进 git。
-4. **卸载要能清干净。** 卸载 bundle 不会删 `$DSH_HOME/evoontology`（详见 [decisions/0002](decisions/0002-stage-core-into-dsh-home.md)），README 里写明手动清理命令。
-5. **浏览器不直连 MCP。** MCP 工具只存在于 Host 工具表，浏览器侧没有句柄；面板一律走 `evo` 命令（见 [decisions/0004](decisions/0004-sidebar-right-seat.md)、[subsystems/client-sidebar](subsystems/client-sidebar.md)）。
+## 6. 扩展位
 
-## 不做
+| 想加的东西 | 加在哪 | 代价 |
+|---|---|---|
+| 一类新节点（如 `unit`） | `lib/schema.js` 加 schema + `KINDS` 加一项 | 不动存储层（表结构是 `kind` + body） |
+| 一个新数据源 | P4 的 `DataSourceConnector`（`describe` / `query`） | 需要 authorizer 与行数/超时上限 |
+| 新的一条 CLI 子命令 | `lib/command.js` 的 switch | 极低 |
+| 面板 | P2：右栏 tab 直读 `store.db` | 需要 Host↔Client 通道 |
+| 自动进化 | P3：Builder/Critic/Evaluator 子角色 + workflow | 需要 held-out 题集与 action card 闸门 |
 
-- 不重写本体引擎，也不 fork 上游核心（见 [decisions/0001](decisions/0001-bundle-over-python-package.md)）。
-- 不把 MCP 行做成配置型 bundle：技能必须由 JS 注册，配置型 bundle 挂不了（见 [decisions/0003](decisions/0003-skills-via-js-not-config.md)）。
-- 不用 `ctx.systemPrompt.section` 硬塞使用说明：同层重名或 order 非有限值会直接抛错，发现入口交给技能目录。
-- 面板不做写操作、不新增 MCP 工具、不内嵌可视化 HTML。
-- 不做跨机器同步、不做云端存储、不做多用户隔离。
+---
+
+## 7. 不做
+
+- **不做多租户**。一个 `store.db` 服务一个项目；共享语义靠导出/导入。
+- **不做实时同步**。本体是版本化的，不是 CRDT。
+- **不自动改写 SQL**。改写会引入新的正确性问题，比慢更危险。
+- **不把语义正文塞进系统提示**。只注入一行状态（P3），正文按需检索。
+- **不做「全自动接受」**。可以全自动提议，不接受全自动生效。

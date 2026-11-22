@@ -408,7 +408,17 @@ $DSH_HOME/evoontology/
 | **P3** | Builder/Critic/Evaluator + 进化 workflow + action card 闸门 | 一轮进化能产出 parent/candidate 两组评测，且人能 accept/reject |
 | **P4** | 多数据源 connector（csv/parquet/http/host-tool） | 换一个非 SQLite 源，P1 的流程不用改代码 |
 
-**P0 之前先做的事**：把这份文档里"待核"的三处（`WorkflowStartRequest` 字段、`ToolDefinition` 的只读/危险注解、资源类型注册服务名）查清并补进文档。**文档里留着"待核"，代码就不许先写**。
+**P0 之前先做的事**：把这份文档里"待核"的三处查清并补进文档。**文档里留着"待核"，代码就不许先写**。
+
+### 待核结论（2026-11-22 已查清）
+
+| 待核项 | 结论 |
+|---|---|
+| `ToolDefinition` 的只读/危险注解 | **不存在**。`ctx.tools` 的方法只有 `register/restrict/get/executable/resolve/definitions/schemas/setExecutor/execute/guard/checkGuards`，字段只有 `output / execute / timeoutMs / isConcurrencySafe / presentCall / presentResult / projectContent / finalizeContent`。只读性只能靠实现自觉 + `ctx.approval` / `ctx.actionCards` 这类独立座位表达。→ P3 的"Critic 只能 browse"要靠 `ctx.tools.restrict` 而不是注解。 |
+| 资源类型注册服务名 | Host Service 目录里**没有** resource/resources 服务（`actionCards` / `approval` / `systemPrompt` / `workflowEngine` 是相邻的 key）。`dsh-resource://` 属 client 侧，P2 才需要，届时查 `docs/subsystems/client-resources.md`。 |
+| `WorkflowStartRequest` 字段 | 仍未展开（P3 才用到）；`ctx.workflowEngine.start(request): WorkflowRun` 的签名已核，字段以 workflow 服务文档为准。 |
+| `node:sqlite` 可用性 | Node v24.21.0 提供 `DatabaseSync / StatementSync / Session / constants / backup`；Host 进程本身就是 Electron 44.7 + Node 24，进程内可用。→ D2 成立。 |
+
 
 ---
 

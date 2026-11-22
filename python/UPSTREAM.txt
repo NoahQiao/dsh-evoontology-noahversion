@@ -1,4 +1,0 @@
-upstream: ruc-datalab/EvoOntology
-version: 1.1.0
-source: D:\dsworkspace\evoontology
-synced: 2026-11-22T18:53:38+08:00

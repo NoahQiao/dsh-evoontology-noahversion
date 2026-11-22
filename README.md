@@ -1,189 +1,155 @@
 # dsh-evoontology-noahversion
 
-把 [EvoOntology](https://github.com/ruc-datalab/EvoOntology)（面向 Data Agent 的自进化 Ontology Layer）
-移植成 [DeepSeek Harness](https://github.com/deepseek-ai) 原生插件（DSH bundle）。
+给 DeepSeek Harness 的原生语义层插件：让 agent 在陌生数据上**不靠猜列名**，并且把「口径」变成可 diff、可回退、有证据的资产。
 
-> 本仓库是**个人移植分支**，不代表上游立场；上游问题请提到上游仓库。
-
-## 上游是什么
-
-EvoOntology（人大 DataLab，MIT，[arXiv 2609.15779](https://arxiv.org/abs/2609.15779)）为 Data Agent
-提供一层**带版本、可自我进化**的语义层（Ontology Layer）：
-
-- **Content Layer** —— 类型化语义图，5 类节点：Term / Mapping / Relation / Constraint / Evidence
-- **Schema Layer** —— 定义节点的字段、允许的关系类型与合法引用模式
-- **Tool Layer** —— 对外暴露确定性的 MCP 工具；session 初始化只注入极简 manifest，记录按需检索
-
-生命周期：`Build → Use → Record → Evolve → Evaluate → Publish/Reject`。Candidate 必须在配对评估中
-稳定优于 Parent 才发布为 `ontology_vN+1`，否则保留 Parent。上游实测（论文四 backbone 分析子集）：
-DDR-Bench 69.5 → 89.5、BIRD EX 63.6 → 72.4。
-
-## 这里做了什么
-
-上游的插件形态只覆盖 Claude Code 与 Codex（各自的 marketplace 清单 + skills + 一个 stdio MCP
-server），宿主契约不是 DSH 的契约。本项目把同一份确定性核心接到 DSH 的插件模型上，形态是**一个 bundle**：
+思路来自 [ruc-datalab/EvoOntology](https://github.com/ruc-datalab/EvoOntology)（人大 DataLab，MIT，arXiv 2609.15779）。本仓库是**原生重写**，不是移植：没有 Python，没有 MCP 子进程，没有随包的核心副本。
 
 ```
-bundle @noah/dsh-evoontology
-├── cordis.patch.yml          # 两行 insert
-│   ├── evoontology-skills    # 本包 index.js：把 Python 核心铺到 $DSH_HOME，注册技能与 evo 命令
-│   └── evoontology-mcp       # @deepseek-ai/dsh-mcp-client：stdio 拉起 Python MCP server
-├── index.js                  # Host 插件（export apply + inject ['skills','commands']）
-├── client.js                 # 右栏「EvoOntology」标签页：版本的只读视图
-├── python/evoontology/       # 随包附带的零依赖上游核心（28 文件，~720 KB）
-├── skills/                   # 上游三个技能，工具名已改写为 mcp__evo__<tool>
-└── locale/ icon.svg          # 插件列表里的标题、说明与图标
+语义 = 版本化的四类节点（术语 / 字段映射 / 约束 / 证据）
+     + 一个 SQLite 文件（$DSH_HOME/evoontology/store.db）
+     + 8 个工具 + 1 条命令 + 3 个技能
 ```
 
-三点设计取舍：
+设计文档见 [`docs/`](docs/README.md)，当前状态见 [roadmap](docs/roadmap.md)。
 
-1. **不重写核心。** 上游核心是零依赖纯 Python，29 个工具 + workspace/版本/session 状态机都在里面。
-   直接以 stdio MCP 挂进 DSH，比在 JS 里重写一遍确定性逻辑可靠得多。
-2. **技能必须由 JS 注册。** DSH 的 `ctx.skills` 是独立 Host 服务，配置型 MCP bundle 带不了技能；
-   没有技能的描述，agent 根本不会知道有这套能力。所以 index.js 做两件事：把核心铺到
-   `$DSH_HOME/evoontology/python`（这样 MCP 行的 `cwd` 与仓库路径解耦），再用
-   `ctx.skills.registerProvider` 注册三个技能。
-3. **面板不碰 MCP。** 浏览器侧拿不到 MCP 工具的句柄，右栏面板改走一个只读的 `evo` 命令
-   （Host 直接扫工作区目录回 JSON）。它不占工具表，也不阻塞对话。
+## 为什么需要它
 
-## 上游能力 → DSH 落点
+拿本机的 `mon_4b.csv` 举例（20 行，4B 模型推理的资源轨迹）：
 
-| 上游能力 | DSH 侧 | 状态 |
-| --- | --- | --- |
-| 29 个确定性 MCP 工具 | `mcp__evo__<tool>`（`@deepseek-ai/dsh-mcp-client` 行） | 已接通（见"验证记录"） |
-| build / evolve / explore 三套工作流 | 三个 DSH skill，由 index.js 注册 | 已注册 |
-| `.evoontology/` 工作区与版本目录 | 复用上游实现，工具参数 `workspace` 传入 | 复用 |
-| EvolutionSession 状态机与门控 | 复用上游实现（tool 层） | 复用 |
-| 离线 HTML 探索器（`explore-ontology`） | 复用上游 `visualize_ontology` | 复用 |
-| 版本状态可视化 | 右栏「EvoOntology」标签页 + `evo` 只读命令 | 已实现，待重启验证 |
+| 列 | 字面理解 | 实际 |
+|---|---|---|
+| `pkgW` | 「封装，瓦」 | 27 927 这个量级不可能是瓦，是 **mW**（27.9–36.6 W） |
+| `gpuPct` | 「GPU 占比 %」 | 出现 177.5 和 143.6，**超 100** ——它是相对基线的倍数 |
 
-## 侧边栏面板
-
-右栏的「+」里会多一个 **EvoOntology** 标签页，只读展示 `$DSH_HOME/evoontology/workspace` 的现状：
-
-- 版本列表，带活动版本标记，每个版本显示 5 类节点（term / mapping / relation / constraint / evidence）计数与合计
-- 最近一次演化 run 的状态、parent / candidate / 已接受版本、轮次与预算、终止原因、更新时间
-- 离线探索器 HTML 的路径、任务轨迹数量、工作区路径
-- 工作区还空着时给一句引导（让 agent 用 `build-ontology` 技能建层）
-
-数据来自 Host 侧的 `evo` 命令（`status` / `versions` / `runs`），只读、不写工作区、不经过 MCP 子进程。
-面板内容在打开与点「刷新」时更新。
-
-## 文档
-
-架构与设计写在 `docs/` 里，每个子系统一篇契约文档（定位与归属 / 契约 / 扩展位 / 不做），
-先写清设计再改代码：
-
-| 文档 | 内容 |
-| --- | --- |
-| [docs/architecture.md](docs/architecture.md) | 分层图、组件职责、激活顺序、三条运行时数据流 |
-| [docs/subsystems/mcp-bridge.md](docs/subsystems/mcp-bridge.md) | `evo` MCP 行的逐项配置契约与理由 |
-| [docs/subsystems/skills.md](docs/subsystems/skills.md) | `ctx.skills.registerProvider` 契约与 front matter 限制 |
-| [docs/subsystems/host-plugin.md](docs/subsystems/host-plugin.md) | `index.js` 为什么要把核心铺到 `$DSH_HOME` |
-| [docs/subsystems/upstream-core.md](docs/subsystems/upstream-core.md) | vendored 核心的同步、运行前提与已知限制 |
-| [docs/subsystems/client-sidebar.md](docs/subsystems/client-sidebar.md) | 右栏面板的注册契约、命令桥与返回形状 |
-| [docs/decisions/](docs/decisions/README.md) | 四条关键取舍的原因与代价 |
-| [docs/roadmap.md](docs/roadmap.md) | v0.1 能力接入 / v0.2 侧边栏 / v0.3 候选 |
+两次分析之间没人记得这些，下一个 agent 还会按列名猜一遍。语义层就是把这些结论连同「你凭什么这么说」（一条可复跑的查询）一起存下来，下次直接用。
 
 ## 安装
 
-前置：`python` 命令可用（Python ≥ 3.10）。本机实测用的是
-`C:\Users\Noah_Qiao\AppData\Local\Programs\Python\Python314\python.exe`。
-
 ```powershell
-# 安装本地目录为 bundle（不要用 dsh plugin add，desktop profile 由应用托管）
-# 在 DSH 会话里用 plugin_manager：action=install_bundle，target=<本仓库绝对路径>
+# 在 DSH 里（不是 shell）
+plugin_manager action=install_bundle target=D:\dsworkspace\dsh-evoontology-noahversion
 ```
 
-首次安装返回 `application: applied`，技能与工具**当场可用，不必重启**。只有"替换已装包的
-JS 实现"这种升级路径才提示 `restart-required`——升级到 v0.2（新增 `client.js` 与 Host 命令）属于后者，
-装完需要重启 DSH。
+`application: applied` 即生效：工具、`/evo` 命令、三个技能当场可用。
+（替换已安装的**同一个包**的 JS 实现时才需要重启 DSH。）
 
-装完后：
-
-- 插件列表里出现 **EvoOntology semantic layer**，图标是三段层叠 + 回转箭头
-- 技能目录里多出 `build-ontology` / `evolve-ontology` / `explore-ontology`
-- Agent 可调用 `mcp__evo__browse_semantics` 等 29 个工具
-- 右栏「+」里多出 **EvoOntology** 标签页（v0.2 起）
-
-### 换解释器
+卸载与清理：
 
 ```powershell
-$env:DSH_EVOONTOLOGY_PYTHON = 'C:\path\to\python.exe'
-```
-
-`cordis.patch.yml` 里 `command` 写成 `!!js process.env.DSH_EVOONTOLOGY_PYTHON || 'python'`，
-未设置时退回 PATH 上的 `python`。
-
-### 停用与清理
-
-关闭 bundle 只移除技能与工具；已经铺到 `$DSH_HOME/evoontology/` 的 Python 核心**不会自动删除**
-（那是运行时数据，不是包内文件）。要彻底清掉：
-
-```powershell
+plugin_manager action=remove_bundle target=@noah/dsh-evoontology
+# remove_bundle 不删这两样，手动清：
+Remove-Item -Recurse -Force "$HOME\.dsh\profiles\desktop\node_modules\@noah\dsh-evoontology"
 Remove-Item -Recurse -Force "$HOME\.dsh\evoontology"
 ```
 
-## 从上游同步
+## 怎么用
 
-`python/` 与 `skills/` 都是从上游 checkout 复制生成的，不要手改；改完上游重新跑一遍：
+三个技能就是三条使用说明书（`build-ontology` / `use-ontology` / `evolve-ontology`），agent 会在合适的时机自动加载。工具层面的骨架：
 
-```powershell
-pwsh -File scripts/sync-from-upstream.ps1 -Upstream D:\dsworkspace\evoontology
+**建一次**（对一份数据）
+
+```
+1. 用宿主工具探测数据（SELECT MIN/MAX/COUNT DISTINCT，读几行样本）
+2. evo_commit({summary, nodes:{upsert:[
+       证据  {id:'ev.pkgW', kind:'evidence', body:{source, probe, result}},
+       术语  {id:'t.package_power', kind:'term', body:{definition, unit, evidence:['ev.pkgW']}},
+       映射  {id:'m.mon_4b.pkgW', kind:'mapping', body:{table, column, term, transform:'value/1000 → W', evidence:['ev.pkgW']}},
+       约束  {id:'c.gpuPct.ratio', kind:'constraint', body:{kind:'ratio', subject:'m.mon_4b.gpuPct', value:'baseline multiple', evidence:['ev.gpuPct']}}
+   ]}})
+3. evo_history({from:'v0', to:'v1'}) 看 diff
+4. evo_publish()   ← 人确认这一步
 ```
 
-脚本做四件事（幂等）：复制 `evoontology/` 包 → 复制三个 skill 目录 → 把技能正文里的裸工具名
-改写成 `mcp__evo__<tool>`（按名字长度降序替换，已带前缀的不重复加）→ 写 `python/UPSTREAM.txt`
-记录上游版本，index.js 用它判断是否需要重新铺核心。
+**每次分析**（同一份数据）
+
+```
+1. evo_status()                      看有没有激活版本
+2. evo_resolve({intent:'pkgW 换算成瓦后的均值'})
+   → 命中映射 + 约束 + 只读查询骨架（带单位换算）
+3. 用宿主工具跑查询，回答里写明依赖 v3 的哪条约束
+```
+
+**发现记录不对**（数据变了 / 记错了）
+
+```
+新证据 + 修正 patch → evo_commit → draft vN+1 → 人确认 → evo_publish
+                                    或 evo_revert({version:'vN-1'}) 一句话回退
+```
+
+命令行等价物：`/evo status`、`/evo versions`、`/evo diff v0 v1`、`/evo publish v1`、`/evo revert v0`、`/evo export`、`/evo path`。
+
+## 八个工具
+
+| 工具 | 作用 | 写 |
+|---|---|---|
+| `evo_status` | 激活版本、五类计数、草稿（含超 7 天悬挂）、最近 run、版本列表 | |
+| `evo_browse` | 关键词 → 节点 + 证据 | |
+| `evo_resolve` | 意图 → 映射/约束/查询骨架 | |
+| `evo_history` | 版本时间线 / 两个版本之间的差异 | |
+| `evo_commit` | patch → 草稿版本（幂等、接地校验、`base` 乐观并发） | ✅ |
+| `evo_publish` | 激活草稿（旧的转 retired） | ✅ |
+| `evo_revert` | 回到历史版本（零成本） | ✅ |
+| `evo_export` | 导出 Markdown / JSON 到 `exports/` | 派生物 |
+
+写路径只有三条。`evo_query`（只读执行器）在 P1，见 [roadmap](docs/roadmap.md)。
+
+## 不变量
+
+- **语义必须接地**：`term` / `mapping` / `constraint` 必须引用存在的 `evidence`，commit 时就校验。
+- **版本不可变 + copy-on-write**：新版本是全量快照，所以 diff 是两次 SELECT 的事，读路径不递归。
+- **单 active 由数据库保证**：`CREATE UNIQUE INDEX version_single_active ON version(status) WHERE status='active'`。
+- **patch 幂等**：`version_patch_hash` 唯一索引——同样的 patch 重复提交不会产生新版本。
+- **多草稿时不许猜**：`evo_publish` 无参且有两个草稿会拒绝，要求指定 `vN`。
+
+## 仓库结构
+
+```
+index.js              把三张座位接起来（tools / commands / skills）
+lib/paths.js          环境变量 → 路径（不建目录）
+lib/schema.js         四类节点的 body JSON Schema + 校验器
+lib/store.js          SQLite：DDL、事务、版本状态机、接地校验
+lib/tools.js          八个工具的入参声明与渲染
+lib/command.js        /evo 子命令
+lib/skills.js         技能发现（front matter + on-demand 正文）
+skills/*/SKILL.md     建 / 用 / 演进三份判据
+cordis.patch.yml      一行 insert
+docs/                 架构、子系统契约、ADR、路线图
+```
+
+## 环境变量
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `DSH_EVOONTOLOGY_STORE` | `<DSH_HOME>/evoontology/store.db` | 换一个 store 文件（多项目用） |
+| `DSH_EVOONTOLOGY_HOME` | `<DSH_HOME>/evoontology` | `runs/`、`exports/`、`cache/`、`viz/` 的父目录 |
+
+数据不出本机：只存证据摘要（`probe` + 结论）与语义，不存样本行。
 
 ## 验证记录
 
-已实际执行（2026-11-22，Windows 11 + Python 3.14.0 + DSH 0.2.2-rc.5 desktop）：
+**已离线验证（无头，不依赖 GUI）**
 
-- 上游核心以 `python -m evoontology.runtime.mcp_server --store <tmp>` 启动，`initialize` 返回
-  `protocolVersion 2025-06-18`，`tools/list` 返回 **29 个工具**（此前文档里"只暴露 2 个工具"
-  的说法只适用于 Claude Code 插件的技能层约束，MCP 服务本身是全量的）
-- `scripts/sync-from-upstream.ps1` 跑通：28 个 Python 文件 + 3 个技能，改写 7 个文件、70 处工具引用
-- `plugin_manager install_bundle` 返回 `application: applied`——**首次安装无需重启 DSH**
-- `!!js dshHomePath('evoontology/...')` 求值正确：核心被铺到 `C:\Users\Noah_Qiao\.dsh\evoontology\python`，
-  工作区落在 `...\.dsh\evoontology\workspace`；MCP 子进程以该 python 目录为 cwd 启动成功
-  （目录里出现了运行时生成的 `__pycache__`），所以 `python -m` + cwd 的取值方式成立，不需要 `PYTHONPATH`
-- 3 个技能 `build-ontology` / `evolve-ontology` / `explore-ontology` 在装入后立即出现在会话技能目录里
-- 29 个 `mcp__evo__*` 工具全部对模型可见，且真实调用 `mcp__evo__list_versions`（workspace 指向
-  `C:\Users\Noah_Qiao\.dsh\evoontology\workspace`）返回 `{"status":"ok","active_version":null,"versions":[]}`；
-  资源服务 `evo` 也出现在 MCP resource server 列表里
+- `scripts/_check-store.mjs`：15 项存储不变量——空库、接地拒绝、v0 落地、patch 幂等、publish、计数、v1 copy-on-write 继承、`base` 乐观并发、唯一 active、revert、草稿不能 revert、悬空边拒绝、`relation` 拒绝、检索、discard。
+- `scripts/_check-plugin.mjs`：60 项端到端——八个工具注册与渲染、空库 status、未激活时 browse 的解释、commit 幂等、缺证据引用被拒、单草稿 publish、多草稿拒绝猜、diff、Markdown/JSON 导出、`/evo` 六个子命令、三个技能加载、注销后座位清空、无多余日志。
+- `node --check` 全文件通过；`package.json` 与两份 locale JSON 解析通过。
 
-尚未验证：
+**已装机验证（2026-11-22）**
 
-- 插件详情页的图标与中英标题渲染（需要在 GUI 里肉眼看）
-- 完整的 build → evolve → publish 生命周期（需要一个真实数据集和 SQLite 数据源）
+- `plugin_manager install_bundle` → `application: applied`，无需重启：`evo_*` 八个工具与 `/evo` 立即出现在会话里；技能目录立刻多出 `build-ontology` / `use-ontology` / `evolve-ontology`（旧的三个技能随卸载消失）。
+- 首次 `evo_status` 返回：`存储：C:\Users\Noah_Qiao\.dsh\evoontology\store.db（schema 2）`、`激活版本：无`、`草稿：无`。
 
-v0.2 面板（2026-11-22，离线验证，未涉及 GUI）：
+**待验证**
 
-- `client.js` 通过 `node --check`；`package.json` 与两份 locale 通过 JSON 解析
-- 用伪 Cordis ctx 跑 `index.js` 的 `apply`，对合成工作区调用 `evo` 命令的 `handler`：
-  `status` 返回 `active: v2`、`v1(total=6) v2(total=9,active)`、`latestRun` 取最新 run、
-  `trajectories: 2`、`visualizations: 1`；`runs` 按新→旧返回；未知子命令返回 `kind: 'error'`；
-  空目录返回 `exists: true, versions: 0`（面板落空态）
-- 在 `vm` 里执行 `client.js` 并抓 factory，用伪 ctx 跑 `apply`：slot 名/key、tab 定义、
-  `inject()` 提供的 `t` 与 `load` 全部符合座位契约
-- 用 hook 打桩驱动面板重渲染（`load` 走真实的 `remote.commands` 解析路径），三态都渲染正确：
-  有数据 → 版本计数 + 活动标记 + run 明细（含 `2026-11-22 11:19:41` 时间格式）+ 探索器路径
-  + 轨迹数 + 工作区路径；空工作区 → 引导文案；命令失败 → 错误信息与重启提示
-
-v0.2 尚未验证（需要重启 DSH 后肉眼确认）：
-
-- 右栏「+」里出现 `EvoOntology`、点开有正文、刷新按钮生效
-- 命令桥在真实会话下的 `sessionId` 解析与 `remote.commands` 返回值形状
+- 完整「建 → 用 → 演进」循环在真实数据上的手感（尤其 `evo_resolve` 的骨架在真实提问下的命中率）。
+- P1 的 `evo_query` 未实现，所以目前「跑查询」仍由宿主工具完成。
 
 ## 已知限制
 
-- **只有 SQLite 只读回放**：上游 `workflow.py` 的内置执行器是 bounded SQLite replay，其它数据源
-  需要宿主工具配合；接 MySQL/Postgres 要另写连接器。
-- **核心是随包副本**：没有做成 pip 依赖。好处是零安装、离线可用；代价是升级要重跑同步脚本。
-- **Windows 优先**：本仓库只在 Windows + Python 3.14 上跑过；Python 侧本身是跨平台的。
+- **P0 没有数据源连接器**：探测数据靠宿主工具，本插件只存结论。`evo_query` 在 P1。
+- **P0 没有面板**：v0.2 的右栏标签页随原生重写下线，P2 以 `store.db` 为源重建（座位决策见 [ADR 0004](docs/decisions/0004-sidebar-right-seat.md)）。
+- **P0 没有自动进化**：Builder / Critic / Evaluator 与 held-out 评测是 P3。技能里明确写了「不要假装有」。
+- **单机单写者**：SQLite 不支持多写者并发；一个 store 服务一个项目。
 
-## 与上游的关系
+## 许可
 
-- 上游版权：Copyright © Meiduo Chong，MIT License
-- 本项目为 DSH 移植版，派生部分同样以 MIT 发布，保留上游版权声明（见 [LICENSE](LICENSE)）
+MIT。上游版权归 Meiduo Chong、Shaole Zhang、Ju Fan、Xiaoyong Du（人大 DataLab）；本仓库的重写由 Noah Qiao 维护。

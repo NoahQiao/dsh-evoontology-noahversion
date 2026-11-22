@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "EvoOntology 语义层",
-    "description": "为当前 agent 提供一个可自进化、可版本化的数据库本体层，移植自 ruc-datalab/EvoOntology。启用后注册三个技能（build-ontology、evolve-ontology、explore-ontology），接入一个本地 stdio MCP 服务暴露 29 个 `mcp__evo__*` 工具，并在右侧栏加一个 EvoOntology 标签页。本体层记录术语、字段映射、关系、约束与证据，让问题落在真实库结构上而不是靠猜。构建或演化本体层会执行真实查询并把结果写入 `$DSH_HOME/evoontology/workspace` 下的工作区，数据不出本机。需要 PATH 上有 Python 3.10+（命令名 `python`），或用环境变量 `DSH_EVOONTOLOGY_PYTHON` 指定解释器。启用时会把随包附带的 Python 核心复制到 `$DSH_HOME/evoontology/python`。关闭该 bundle 会移除技能、工具与面板，但已复制的文件会保留，需要手动删除。"
+    "description": "给当前 agent 一个可版本化、证据驱动的数据语义层（本体层），思路来自 ruc-datalab/EvoOntology，实现为原生 DSH 插件。启用后注册 8 个 evo_* 工具（状态 / 检索 / 落载体 / 版本差异 / 提交 / 发布 / 回退 / 导出）、一个 /evo 命令和三个技能（建、用、演进）。语义存进一个 SQLite 文件 $DSH_HOME/evoontology/store.db，进程内读写，不需要 Python、子进程或网络。术语、字段映射、约束都必须引用可复跑的观测证据，版本不可变、可 diff、可零成本回退。数据不出本机：只记录证据摘要与可重跑的查询，不存样本行。关闭该 bundle 会移除工具、命令与技能，store.db 与 runs/ 会保留，删除 $DSH_HOME/evoontology 即可清干净。"
   }
 }
