@@ -100,6 +100,18 @@ Remove-Item -Recurse -Force "$HOME\.dsh\evoontology"
 
 写路径只有三条（commit / publish / revert）。`evo_query` 的只读性是**执行层**保证的：文本闸（只放 `SELECT`/`WITH`）+ authorizer 白名单（`SELECT`/`READ`/`FUNCTION`/`RECURSIVE`），契约见 [docs/subsystems/query.md](docs/subsystems/query.md)。
 
+## 右栏面板
+
+右栏「+」里的 **EvoOntology** 标签页：激活版本与五类计数、版本列表（点一个版本就和激活版本对比，出 `+ / - / ~`）、任务进行中/完成/失败、存储路径。
+
+它不经过模型，也不读数据库——数据是经 Host 的 `/evo status --json` 与 `/evo diff <from> <to> --json` 拿的快照。契约见 [docs/subsystems/client-sidebar.md](docs/subsystems/client-sidebar.md)。
+
+```
+/evo status          人读的六行摘要
+/evo status --json   面板用的结构化快照
+/evo diff v1 v2      两个版本之间改了什么
+```
+
 ## 不变量
 
 - **语义必须接地**：`term` / `mapping` / `constraint` 必须引用存在的 `evidence`，commit 时就校验。
@@ -121,6 +133,7 @@ lib/query-worker.js   线程内执行 + authorizer 白名单
 lib/tools.js          十一个工具的入参声明与渲染
 lib/command.js        /evo 子命令
 lib/skills.js         技能发现（front matter + on-demand 正文）
+client.js             右栏标签页（经 /evo 命令取数，不碰数据库）
 skills/*/SKILL.md     建 / 用 / 演进三份判据
 cordis.patch.yml      一行 insert
 docs/                 架构、子系统契约、ADR、路线图
@@ -141,6 +154,7 @@ docs/                 架构、子系统契约、ADR、路线图
 
 - `scripts/_check-store.mjs`：15 项存储不变量——空库、接地拒绝、v0 落地、patch 幂等、publish、计数、v1 copy-on-write 继承、`base` 乐观并发、唯一 active、revert、草稿不能 revert、悬空边拒绝、`relation` 拒绝、检索、discard。
 - `scripts/_check-plugin.mjs`：62 项端到端——十一个工具注册与渲染、空库 status、未激活时 browse 的解释、commit 幂等、缺证据引用被拒、单草稿 publish、多草稿拒绝猜、diff、Markdown/JSON 导出、`/evo` 子命令、三个技能加载、注销后座位清空、无多余日志。
+- `scripts/_check-client.mjs`：33 项面板——模块 id、`inject` 列表、两次注册的 id 一致（写错会白屏）、三态渲染、点版本触发 `/evo diff`、差异分组、样式无颜色字面量、无弹窗 API。
 - `scripts/_check-query.mjs`：55 项 P1 面——语句闸门 11 项（含 `SELECT ';'` 通过、`SELECT 1; DROP TABLE t` 拒绝）、csv 引号/转义/分号、类型推断、sqlite 写入被 authorizer 拒、行数上限、聚合、缺表提示、5 s 内超时、超长 cell 截断、任务闭环（无激活版本拒绝开任务、同会话只允许一个 running、被拒的查询也记事件、finish 幂等、跨会话隔离）、`/evo status|diff`、提示行（单行、含版本号、1.5 s 缓存、无激活版本时不注入）、dispose 清座位。
 - `node --check` 十个模块全部通过；`package.json` 与两份 locale JSON 解析通过。
 
@@ -154,12 +168,13 @@ docs/                 架构、子系统契约、ADR、路线图
 
 - P1 的验收判据：「建完一次语义层后，第二次分析同一份数据时不读原始 schema 也能写对查询」——需要一次真实的两轮对话。
 - 提示行在真实会话里的组装位置（`order: 62` 是否与相邻 section 冲突）。
+- 右栏标签页在真实宿主里的渲染：座位派发、主题 token、`keepMounted` 的保持。离线自检只能证明渲染逻辑与数据通路，证不了 React 调度。
 - 完整「建 → 用 → 纠正」循环在真实数据上的手感（尤其 `evo_resolve` 骨架在真实提问下的命中率）。
 
 ## 已知限制
 
 - **超时会漏一个文件句柄**：`node:sqlite` 没有 `interrupt`，只能说杀掉查询线程；线程被杀时它持有的 sqlite 只读句柄不会被回收，直到 DSH 重启。csv/json 不受影响。见 [docs/subsystems/query.md](docs/subsystems/query.md)。
-- **P1 没有面板**：v0.2 的右栏标签页随原生重写下线，P2 以 `store.db` 为源重建（座位决策见 [ADR 0004](docs/decisions/0004-sidebar-right-seat.md)）。
+- **面板是只读的**：能看版本、计数、差异，不能改；发布仍需模型调用 `evo_publish` 或 `/evo publish`。差异只到节点级（`kind` + label），evidence 的 `probe` 摘要还没进面板（见 [roadmap](docs/roadmap.md) P2 的「部分达成」）。
 - **没有自动进化**：Builder / Critic / Evaluator 与 held-out 评测是 P3。技能里明确写了「不要假装有」。
 - **单机单写者**：SQLite 不支持多写者并发；一个 store 服务一个项目。
 

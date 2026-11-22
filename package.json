@@ -1,17 +1,19 @@
 {
   "name": "@noah/dsh-evoontology",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Native EvoOntology semantic layer for DeepSeek Harness: a versioned, evidence-grounded ontology in one SQLite file, exposed as tools, a command, skills and one line of prompt state.",
   "type": "module",
   "license": "MIT",
   "exports": {
     ".": "./index.js",
+    "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
   "files": [
     "index.js",
+    "client.js",
     "lib",
     "cordis.patch.yml",
     "locale/*.json",
@@ -21,6 +23,17 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
     }
   }
 }

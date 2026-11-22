@@ -14,6 +14,7 @@
 | 查数为什么只读、超时怎么掐掉 | [subsystems/query.md](subsystems/query.md) |
 | 技能怎么被注册、为什么只有三份 | [subsystems/skills.md](subsystems/skills.md) |
 | 插件怎么接进宿主、环境变量有哪些 | [subsystems/host-plugin.md](subsystems/host-plugin.md) |
+| 右栏标签页怎么挂、为什么它不读数据库 | [subsystems/client-sidebar.md](subsystems/client-sidebar.md) |
 | 为什么重写掉了 Python 版本 | [decisions/0005](decisions/0005-native-rewrite.md) |
 | 接下来做什么 | [roadmap.md](roadmap.md) |
 | 更远的形态（提案，非现状） | [native-redesign.md](native-redesign.md) |
@@ -38,11 +39,12 @@ docs/
 │   ├── tools.md         工具面契约（11 个工具）
 │   ├── query.md         只读执行器契约（闸门 / 白名单 / 上限 / 超时代价）
 │   ├── skills.md        技能面契约
-│   └── host-plugin.md   Host 插件生命周期与环境变量
+│   ├── host-plugin.md   Host 插件生命周期与环境变量
+│   └── client-sidebar.md 右栏标签页契约（加载形态 / 座位 / 命令桥）
 └── decisions/
     ├── 0001 … 0002      已取代（MCP 桥 + 铺 Python 核心）
     ├── 0003             技能必须由 JS 注册（仍成立）
-    ├── 0004             面板坐右侧栏（座位已定，P2 实现）
+    ├── 0004             面板坐右侧栏（P2 已实现）
     ├── 0005             原生重写
     ├── 0006             单文件 SQLite
     └── 0007             接地在 commit 时校验

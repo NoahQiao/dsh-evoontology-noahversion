@@ -24,10 +24,13 @@
 
 ## P2：看见
 
-- [ ] 右栏 tab 直读 `store.db`（座位决策见 [decisions/0004](decisions/0004-sidebar-right-seat.md)）
-- [ ] Host → Client 数据通路走 `/evo status --json`（不新增 HTTP 端点）
-- [ ] 版本差异视图：节点级的 `+ / - / ~`，点开看 evidence 的 `probe`
+- [x] 右栏 tab 读 `store.db`（座位决策见 [decisions/0004](decisions/0004-sidebar-right-seat.md)；`client.js` 经 `/evo status --json` 取数，浏览器不碰数据库）
+- [x] Host → Client 数据通路走 `/evo status --json`（不新增 HTTP 端点，不新增工具）
+- [x] 版本差异视图：节点级的 `+ / - / ~` 与边的 `+ / -`，点一个版本即对比激活版本
 - 判据：用户不需要让 agent 转述，就能看出「这次改了什么、为什么」
+- **部分达成**：改了什么、在哪些节点上一目了然；「为什么」（`evidence.probe` 摘要）还没进面板——节点只有 `kind` 与 label。下一步是把 `evo_history` 的 evidence 摘要一并放进 `/evo diff --json`，但那会让单次对比的载荷变大，值得先看真实使用频率再定
+- 离线自检：面板 33 项（`scripts/_check-client.mjs`）
+- **待实测**：需要重启 DSH 后肉眼确认右栏「+」里的「EvoOntology」标签页
 
 ## P3：自己变好
 

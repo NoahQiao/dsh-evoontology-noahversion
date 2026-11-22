@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "EvoOntology 语义层",
-    "description": "给当前 agent 一个可版本化、证据驱动的数据语义层（本体层），思路来自 ruc-datalab/EvoOntology，实现为原生 DSH 插件。启用后注册 11 个 evo_* 工具（状态 / 检索 / 落载体 / 版本差异 / 只读查数 / 任务开始 / 任务收尾 / 提交 / 发布 / 回退 / 导出）、一个 /evo 命令和三个技能（建、用、演进），并在系统提示里注入一行本体状态（版本号、节点计数、发布距今）。语义存进一个 SQLite 文件 $DSH_HOME/evoontology/store.db，进程内读写，不需要 Python、子进程或网络。术语、字段映射、约束都必须引用可复跑的观测证据，版本不可变、可 diff、可零成本回退。唯一的数据执行器 evo_query 只读：文本闸只放 SELECT/WITH，authorizer 白名单只放 SELECT/READ/FUNCTION/RECURSIVE，最多 100 行、单值 2 KB、5 秒超时。数据不出本机：只记录证据摘要与可重跑的查询，不存样本行。关闭该 bundle 会移除工具、命令与技能，store.db 与 runs/ 会保留，删除 $DSH_HOME/evoontology 即可清干净。"
+    "description": "给当前 agent 一个可版本化、证据驱动的数据语义层（本体层），思路来自 ruc-datalab/EvoOntology，实现为原生 DSH 插件。启用后注册 11 个 evo_* 工具（状态 / 检索 / 落载体 / 版本差异 / 只读查数 / 任务开始 / 任务收尾 / 提交 / 发布 / 回退 / 导出）、一个 /evo 命令和三个技能（建、用、演进），在系统提示里注入一行本体状态（版本号、节点计数、发布距今），并提供一个右栏标签页（版本、计数、任务、点版本看节点级差异）。语义存进一个 SQLite 文件 $DSH_HOME/evoontology/store.db，进程内读写，不需要 Python、子进程或网络。术语、字段映射、约束都必须引用可复跑的观测证据，版本不可变、可 diff、可零成本回退。唯一的数据执行器 evo_query 只读：文本闸只放 SELECT/WITH，authorizer 白名单只放 SELECT/READ/FUNCTION/RECURSIVE，最多 100 行、单值 2 KB、5 秒超时。数据不出本机：只记录证据摘要与可重跑的查询，不存样本行。关闭该 bundle 会移除工具、命令与技能，store.db 与 runs/ 会保留，删除 $DSH_HOME/evoontology 即可清干净。"
   }
 }
