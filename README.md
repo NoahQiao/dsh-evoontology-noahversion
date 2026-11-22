@@ -165,6 +165,11 @@ v0.2 面板（2026-11-22，离线验证，未涉及 GUI）：
   `status` 返回 `active: v2`、`v1(total=6) v2(total=9,active)`、`latestRun` 取最新 run、
   `trajectories: 2`、`visualizations: 1`；`runs` 按新→旧返回；未知子命令返回 `kind: 'error'`；
   空目录返回 `exists: true, versions: 0`（面板落空态）
+- 在 `vm` 里执行 `client.js` 并抓 factory，用伪 ctx 跑 `apply`：slot 名/key、tab 定义、
+  `inject()` 提供的 `t` 与 `load` 全部符合座位契约
+- 用 hook 打桩驱动面板重渲染（`load` 走真实的 `remote.commands` 解析路径），三态都渲染正确：
+  有数据 → 版本计数 + 活动标记 + run 明细（含 `2026-11-22 11:19:41` 时间格式）+ 探索器路径
+  + 轨迹数 + 工作区路径；空工作区 → 引导文案；命令失败 → 错误信息与重启提示
 
 v0.2 尚未验证（需要重启 DSH 后肉眼确认）：
 

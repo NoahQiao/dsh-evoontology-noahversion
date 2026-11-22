@@ -159,11 +159,18 @@ Host    ctx.commands.register({ name: 'evo', input: { hint: 'status | versions |
 - `runs` → 新→旧 `run_2,run_1`；`versions` → `["v1","v2"]`；未知子命令 → `kind: 'error'`。
 - 空工作区 → `exists: true`、`versions: 0`、`runs: 0`（面板落空态）。
 - `client.js` 通过 `node --check`；`package.json` 与两份 locale 通过 JSON 解析。
+- 注册形状（在 `vm` 里执行 `client.js`、用伪 `__ModuleLoader__` 抓 factory + 伪 ctx 跑 `apply`）：
+  slot 名 `sidebar.right.pane.tab`、key `@noah/dsh-evoontology`、locale `dsh-evoontology`；
+  tab 定义 `{id: '@noah/dsh-evoontology', kind: 'evo', keepMounted: true, guide.order: 40}`；
+  `inject()` 提供 `t` 与 `load`。
+- 面板三态（用 hook 打桩驱动 `EvoPane` 重渲染，`load` 走真实的 `remote.commands` 解析路径）：
+  有数据 → 版本行带 5 类计数与活动标记、run 明细（状态/parent/candidate/accepted/轮次预算/终止原因/时间）、
+  探索器路径、轨迹数、工作区路径；空工作区 → 引导文案 + 工作区路径；命令失败 → 错误信息 + 重启提示。
 
 未实测（需要重启后肉眼确认）：
 
 - 右栏「+」里出现 `EvoOntology` 条目、点开有正文、刷新按钮生效。
-- 命令桥在真实会话下的 `sessionId` 解析与 `remote.commands` 返回值形状。
+- 命令桥在真实 Host 下的 `sessionId` 解析与 `remote.commands` 实际返回形状。
 
 ## 未决问题
 
