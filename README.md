@@ -53,6 +53,24 @@ bundle @noah/dsh-evoontology
 | EvolutionSession 状态机与门控 | 复用上游实现（tool 层） | 复用 |
 | 离线 HTML 探索器（`explore-ontology`） | 复用上游 `visualize_ontology` | 复用 |
 
+## 文档
+
+架构与设计写在 `docs/` 里，每个子系统一篇契约文档（定位与归属 / 契约 / 扩展位 / 不做），
+先写清设计再改代码：
+
+| 文档 | 内容 |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | 分层图、组件职责、激活顺序、三条运行时数据流 |
+| [docs/subsystems/mcp-bridge.md](docs/subsystems/mcp-bridge.md) | `evo` MCP 行的逐项配置契约与理由 |
+| [docs/subsystems/skills.md](docs/subsystems/skills.md) | `ctx.skills.registerProvider` 契约与 front matter 限制 |
+| [docs/subsystems/host-plugin.md](docs/subsystems/host-plugin.md) | `index.js` 为什么要把核心铺到 `$DSH_HOME` |
+| [docs/subsystems/upstream-core.md](docs/subsystems/upstream-core.md) | vendored 核心的同步、运行前提与已知限制 |
+| [docs/subsystems/client-sidebar.md](docs/subsystems/client-sidebar.md) | **设计稿（未实现）**：右侧栏面板 |
+| [docs/decisions/](docs/decisions/README.md) | 四条关键取舍的原因与代价 |
+| [docs/roadmap.md](docs/roadmap.md) | v0.1 已交付 / v0.2 侧边栏 / v0.3 候选 |
+
+> 侧边栏面板目前只有设计（右侧栏标签页 + Host 命令桥取只读数据），代码尚未落地。
+
 ## 安装
 
 前置：`python` 命令可用（Python ≥ 3.10）。本机实测用的是
