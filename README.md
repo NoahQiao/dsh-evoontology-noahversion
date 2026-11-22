@@ -161,7 +161,7 @@ docs/                 架构、子系统契约、ADR、路线图
 **已装机验证（2026-11-22）**
 
 - `plugin_manager install_bundle` → `application: applied`，无需重启：`evo_*` 工具与 `/evo` 立即出现在会话里；技能目录立刻多出 `build-ontology` / `use-ontology` / `evolve-ontology`。
-- 首次 `evo_status` 返回：`存储：C:\Users\Noah_Qiao\.dsh\evoontology\store.db（schema 2）`、`激活版本：无`、`草稿：无`。
+- 首次 `evo_status` 返回：`存储：<DSH_HOME>\evoontology\store.db（schema 2）`、`激活版本：无`、`草稿：无`。
 - Electron 进程内 `node:sqlite` 可用（`24.21.0 / 44.7.0`），宿主不需要额外运行时。
 
 **待验证**
