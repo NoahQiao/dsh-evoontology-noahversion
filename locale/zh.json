@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "EvoOntology 语义层",
-    "description": "为当前 agent 提供一个可自进化、可版本化的数据库本体层，移植自 ruc-datalab/EvoOntology。启用后注册三个技能（build-ontology、evolve-ontology、explore-ontology），并接入一个本地 stdio MCP 服务，暴露 29 个 `mcp__evo__*` 工具。本体层记录术语、字段映射、关系、约束与证据，让问题落在真实库结构上而不是靠猜。构建或演化本体层会对工作区的 `.evoontology/` 目录执行真实查询并写入文件，数据不出本机。需要 PATH 上有 Python 3.10+（命令名 `python`），或用环境变量 `DSH_EVOONTOLOGY_PYTHON` 指定解释器。启用时会把随包附带的 Python 核心复制到 `$DSH_HOME/evoontology/python`，工具可能需要在重启 DSH 后才出现。关闭该 bundle 会移除技能与工具，但已复制的文件会保留，需要手动删除。"
+    "description": "为当前 agent 提供一个可自进化、可版本化的数据库本体层，移植自 ruc-datalab/EvoOntology。启用后注册三个技能（build-ontology、evolve-ontology、explore-ontology），接入一个本地 stdio MCP 服务暴露 29 个 `mcp__evo__*` 工具，并在右侧栏加一个 EvoOntology 标签页。本体层记录术语、字段映射、关系、约束与证据，让问题落在真实库结构上而不是靠猜。构建或演化本体层会执行真实查询并把结果写入 `$DSH_HOME/evoontology/workspace` 下的工作区，数据不出本机。需要 PATH 上有 Python 3.10+（命令名 `python`），或用环境变量 `DSH_EVOONTOLOGY_PYTHON` 指定解释器。启用时会把随包附带的 Python 核心复制到 `$DSH_HOME/evoontology/python`。关闭该 bundle 会移除技能、工具与面板，但已复制的文件会保留，需要手动删除。"
   }
 }

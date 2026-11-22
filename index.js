@@ -18,6 +18,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   statSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
@@ -26,8 +27,12 @@ import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-evoontology'
 
-/** The skill loader is a hard dependency: without it this bundle contributes nothing. */
-export const inject = ['skills']
+/**
+ * The skill loader is a hard dependency: without it this bundle contributes
+ * nothing. `commands` backs the read-only `/evo` status command the sidebar
+ * panel reads from.
+ */
+export const inject = ['skills', 'commands']
 
 const packageDir = dirname(fileURLToPath(import.meta.url))
 const sourcePython = join(packageDir, 'python')
@@ -149,6 +154,175 @@ function createProvider(log) {
   }
 }
 
+// ---- read-only workspace view ------------------------------------------------
+//
+// The sidebar panel cannot call MCP tools (they live on the Host tool table,
+// not in the browser), so it reads through this small command instead of the
+// Python process: the panel is a read-only view, and parsing the store's JSON
+// is far cheaper than starting another interpreter.
+
+/** Record families serialized under `<workspace>/versions/<version>/`. */
+const RECORD_FAMILIES = ['terms', 'mappings', 'relations', 'constraints', 'evidence']
+
+/** Where `--store` points; the panel reads the very same tree. */
+function workspaceDir() {
+  const configured = process.env.DSH_EVOONTOLOGY_WORKSPACE
+  if (typeof configured === 'string' && configured.trim() !== '') return configured.trim()
+  return join(dshHome(), 'evoontology', 'workspace')
+}
+
+function readJsonSafe(file) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+function entriesOf(dir) {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+}
+
+function activeVersionOf(workspace) {
+  const active = readJsonSafe(join(workspace, 'active.json'))
+  if (active === undefined || active === null || typeof active !== 'object') return null
+  // `version` is the legacy field the upstream store still accepts.
+  const version = String(active.active_version ?? active.version ?? '').trim()
+  return version === '' ? null : version
+}
+
+function countsOfVersion(workspace, version) {
+  const dir = join(workspace, 'versions', version)
+  const counts = {}
+  let total = 0
+  for (const family of RECORD_FAMILIES) {
+    const records = readJsonSafe(join(dir, `${family}.json`))
+    const count = Array.isArray(records) ? records.length : 0
+    counts[family] = count
+    total += count
+  }
+  return { version, counts, total }
+}
+
+function collectVersions(workspace, activeVersion) {
+  const versionsDir = join(workspace, 'versions')
+  return entriesOf(versionsDir)
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
+    .map((version) => ({ ...countsOfVersion(workspace, version), active: version === activeVersion }))
+}
+
+/** `run_<n>/run.json` records, newest first. Budget and round stay as upstream wrote them. */
+function collectRuns(workspace, limit) {
+  const runsDir = join(workspace, 'evolution')
+  const rows = []
+  for (const entry of entriesOf(runsDir)) {
+    if (!entry.isDirectory() || !/^run_\d+$/.test(entry.name)) continue
+    const file = join(runsDir, entry.name, 'run.json')
+    if (!existsSync(file)) continue
+    const run = readJsonSafe(file)
+    if (run === undefined || run === null || typeof run !== 'object') continue
+    let updatedAt
+    try {
+      updatedAt = statSync(file).mtime.toISOString()
+    } catch {
+      updatedAt = undefined
+    }
+    rows.push({
+      dir: entry.name,
+      runId: run.run_id ?? entry.name,
+      status: run.status ?? null,
+      parentVersion: run.parent_version ?? null,
+      currentCandidate: run.current_candidate ?? null,
+      acceptedVersion: run.accepted_version ?? null,
+      endReason: run.end_reason ?? null,
+      round: run.round ?? null,
+      budget: run.budget ?? null,
+      updatedAt,
+    })
+  }
+  rows.sort((left, right) => {
+    const leftIndex = Number(left.dir.split('_').pop())
+    const rightIndex = Number(right.dir.split('_').pop())
+    return rightIndex - leftIndex
+  })
+  return limit === undefined ? rows : rows.slice(0, limit)
+}
+
+function workspaceStatus(workspace) {
+  const exists = existsSync(workspace)
+  const activeVersion = exists ? activeVersionOf(workspace) : null
+  const versions = exists ? collectVersions(workspace, activeVersion) : []
+  const runs = exists ? collectRuns(workspace, 5) : []
+  const trajectories = exists
+    ? entriesOf(join(workspace, 'trajectories')).filter((entry) => entry.isFile() && entry.name.endsWith('.json')).length
+    : 0
+  const visualizationDir = join(workspace, 'visualizations')
+  const visualizations = exists
+    ? entriesOf(visualizationDir)
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.html'))
+        .map((entry) => ({ file: entry.name, path: join(visualizationDir, entry.name) }))
+    : []
+  const runTargets = exists && versions.length > 0 ? versions.filter((row) => row.active) : []
+  return {
+    ok: true,
+    workspace,
+    exists,
+    activeVersion,
+    versions,
+    runs,
+    latestRun: runs.length > 0 ? runs[0] : null,
+    trajectories,
+    visualizations,
+    activeVersionTotals: runTargets,
+    generatedAt: new Date().toISOString(),
+  }
+}
+
+/** `status | versions | runs`; every reply is JSON so the panel parses one shape. */
+function evoCommand() {
+  return {
+    name: 'evo',
+    description: 'EvoOntology 语义层只读状态：status / versions / runs（不修改工作区）。',
+    input: { hint: 'status | versions | runs' },
+    async handler(invocation) {
+      try {
+        const raw = String(invocation?.rawInput ?? '').trim().replace(/^\/?evo\b\s*/i, '')
+        const action = (raw.split(/\s+/)[0] || 'status').toLowerCase()
+        const workspace = workspaceDir()
+        if (action === 'runs') {
+          return { kind: 'success', text: JSON.stringify({ ok: true, workspace, runs: collectRuns(workspace, 20) }) }
+        }
+        if (action === 'versions') {
+          const exists = existsSync(workspace)
+          const activeVersion = exists ? activeVersionOf(workspace) : null
+          return {
+            kind: 'success',
+            text: JSON.stringify({
+              ok: true,
+              workspace,
+              exists,
+              activeVersion,
+              versions: exists ? collectVersions(workspace, activeVersion) : [],
+            }),
+          }
+        }
+        if (action === 'status') {
+          return { kind: 'success', text: JSON.stringify(workspaceStatus(workspace)) }
+        }
+        return { kind: 'error', text: `unknown action: ${action}` }
+      } catch (error) {
+        return { kind: 'error', text: String(error?.message ?? error) }
+      }
+    },
+  }
+}
+
 export function apply(ctx) {
   // Logging must never be the reason a skill fails to register, and the Logger
   // shape varies between host builds, so probe it and fall back to the console.
@@ -171,4 +345,12 @@ export function apply(ctx) {
   stagePython(log)
 
   ctx.effect(() => ctx.skills.registerProvider(() => createProvider(log)))
+
+  // Read-only status for the sidebar panel. A failure here must not take the
+  // skills down with it, so the registration is guarded independently.
+  try {
+    ctx.effect(() => ctx.commands.register(evoCommand()))
+  } catch (error) {
+    log(`could not register the /evo command: ${String(error)}`)
+  }
 }

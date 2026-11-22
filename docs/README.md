@@ -11,7 +11,7 @@
 | 想知道 agent 怎么发现「建本体 / 演进本体 / 浏览本体」 | [subsystems/skills.md](subsystems/skills.md) |
 | 想知道 `index.js` 为什么要往 `$DSH_HOME` 铺文件 | [subsystems/host-plugin.md](subsystems/host-plugin.md) |
 | 想知道上游核心改没改、怎么升级 | [subsystems/upstream-core.md](subsystems/upstream-core.md) |
-| 想知道侧边栏 UI 怎么加（设计稿，尚未实现） | [subsystems/client-sidebar.md](subsystems/client-sidebar.md) |
+| 想知道侧边栏面板怎么注册、数据怎么到浏览器 | [subsystems/client-sidebar.md](subsystems/client-sidebar.md) |
 | 想知道当初为什么这么选 | [decisions/](decisions/README.md) |
 | 想知道哪些做完了、哪些还没做 | [roadmap.md](roadmap.md) |
 

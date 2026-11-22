@@ -26,15 +26,16 @@ server），宿主契约不是 DSH 的契约。本项目把同一份确定性核
 ```
 bundle @noah/dsh-evoontology
 ├── cordis.patch.yml          # 两行 insert
-│   ├── evoontology-skills    # 本包 index.js：把 Python 核心铺到 $DSH_HOME，注册技能
+│   ├── evoontology-skills    # 本包 index.js：把 Python 核心铺到 $DSH_HOME，注册技能与 evo 命令
 │   └── evoontology-mcp       # @deepseek-ai/dsh-mcp-client：stdio 拉起 Python MCP server
-├── index.js                  # Host 插件（export apply + inject ['skills']）
+├── index.js                  # Host 插件（export apply + inject ['skills','commands']）
+├── client.js                 # 右栏「EvoOntology」标签页：版本的只读视图
 ├── python/evoontology/       # 随包附带的零依赖上游核心（28 文件，~720 KB）
 ├── skills/                   # 上游三个技能，工具名已改写为 mcp__evo__<tool>
 └── locale/ icon.svg          # 插件列表里的标题、说明与图标
 ```
 
-两点设计取舍：
+三点设计取舍：
 
 1. **不重写核心。** 上游核心是零依赖纯 Python，29 个工具 + workspace/版本/session 状态机都在里面。
    直接以 stdio MCP 挂进 DSH，比在 JS 里重写一遍确定性逻辑可靠得多。
@@ -42,6 +43,8 @@ bundle @noah/dsh-evoontology
    没有技能的描述，agent 根本不会知道有这套能力。所以 index.js 做两件事：把核心铺到
    `$DSH_HOME/evoontology/python`（这样 MCP 行的 `cwd` 与仓库路径解耦），再用
    `ctx.skills.registerProvider` 注册三个技能。
+3. **面板不碰 MCP。** 浏览器侧拿不到 MCP 工具的句柄，右栏面板改走一个只读的 `evo` 命令
+   （Host 直接扫工作区目录回 JSON）。它不占工具表，也不阻塞对话。
 
 ## 上游能力 → DSH 落点
 
@@ -52,6 +55,19 @@ bundle @noah/dsh-evoontology
 | `.evoontology/` 工作区与版本目录 | 复用上游实现，工具参数 `workspace` 传入 | 复用 |
 | EvolutionSession 状态机与门控 | 复用上游实现（tool 层） | 复用 |
 | 离线 HTML 探索器（`explore-ontology`） | 复用上游 `visualize_ontology` | 复用 |
+| 版本状态可视化 | 右栏「EvoOntology」标签页 + `evo` 只读命令 | 已实现，待重启验证 |
+
+## 侧边栏面板
+
+右栏的「+」里会多一个 **EvoOntology** 标签页，只读展示 `$DSH_HOME/evoontology/workspace` 的现状：
+
+- 版本列表，带活动版本标记，每个版本显示 5 类节点（term / mapping / relation / constraint / evidence）计数与合计
+- 最近一次演化 run 的状态、parent / candidate / 已接受版本、轮次与预算、终止原因、更新时间
+- 离线探索器 HTML 的路径、任务轨迹数量、工作区路径
+- 工作区还空着时给一句引导（让 agent 用 `build-ontology` 技能建层）
+
+数据来自 Host 侧的 `evo` 命令（`status` / `versions` / `runs`），只读、不写工作区、不经过 MCP 子进程。
+面板内容在打开与点「刷新」时更新。
 
 ## 文档
 
@@ -65,11 +81,9 @@ bundle @noah/dsh-evoontology
 | [docs/subsystems/skills.md](docs/subsystems/skills.md) | `ctx.skills.registerProvider` 契约与 front matter 限制 |
 | [docs/subsystems/host-plugin.md](docs/subsystems/host-plugin.md) | `index.js` 为什么要把核心铺到 `$DSH_HOME` |
 | [docs/subsystems/upstream-core.md](docs/subsystems/upstream-core.md) | vendored 核心的同步、运行前提与已知限制 |
-| [docs/subsystems/client-sidebar.md](docs/subsystems/client-sidebar.md) | **设计稿（未实现）**：右侧栏面板 |
+| [docs/subsystems/client-sidebar.md](docs/subsystems/client-sidebar.md) | 右栏面板的注册契约、命令桥与返回形状 |
 | [docs/decisions/](docs/decisions/README.md) | 四条关键取舍的原因与代价 |
-| [docs/roadmap.md](docs/roadmap.md) | v0.1 已交付 / v0.2 侧边栏 / v0.3 候选 |
-
-> 侧边栏面板目前只有设计（右侧栏标签页 + Host 命令桥取只读数据），代码尚未落地。
+| [docs/roadmap.md](docs/roadmap.md) | v0.1 能力接入 / v0.2 侧边栏 / v0.3 候选 |
 
 ## 安装
 
@@ -82,13 +96,15 @@ bundle @noah/dsh-evoontology
 ```
 
 首次安装返回 `application: applied`，技能与工具**当场可用，不必重启**。只有"替换已装包的
-JS 实现"这种升级路径才提示 `restart-required`。
+JS 实现"这种升级路径才提示 `restart-required`——升级到 v0.2（新增 `client.js` 与 Host 命令）属于后者，
+装完需要重启 DSH。
 
 装完后：
 
 - 插件列表里出现 **EvoOntology semantic layer**，图标是三段层叠 + 回转箭头
 - 技能目录里多出 `build-ontology` / `evolve-ontology` / `explore-ontology`
 - Agent 可调用 `mcp__evo__browse_semantics` 等 29 个工具
+- 右栏「+」里多出 **EvoOntology** 标签页（v0.2 起）
 
 ### 换解释器
 
@@ -141,6 +157,19 @@ pwsh -File scripts/sync-from-upstream.ps1 -Upstream D:\dsworkspace\evoontology
 
 - 插件详情页的图标与中英标题渲染（需要在 GUI 里肉眼看）
 - 完整的 build → evolve → publish 生命周期（需要一个真实数据集和 SQLite 数据源）
+
+v0.2 面板（2026-11-22，离线验证，未涉及 GUI）：
+
+- `client.js` 通过 `node --check`；`package.json` 与两份 locale 通过 JSON 解析
+- 用伪 Cordis ctx 跑 `index.js` 的 `apply`，对合成工作区调用 `evo` 命令的 `handler`：
+  `status` 返回 `active: v2`、`v1(total=6) v2(total=9,active)`、`latestRun` 取最新 run、
+  `trajectories: 2`、`visualizations: 1`；`runs` 按新→旧返回；未知子命令返回 `kind: 'error'`；
+  空目录返回 `exists: true, versions: 0`（面板落空态）
+
+v0.2 尚未验证（需要重启 DSH 后肉眼确认）：
+
+- 右栏「+」里出现 `EvoOntology`、点开有正文、刷新按钮生效
+- 命令桥在真实会话下的 `sessionId` 解析与 `remote.commands` 返回值形状
 
 ## 已知限制
 

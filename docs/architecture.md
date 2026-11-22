@@ -4,7 +4,7 @@
 
 ## 一句话
 
-上游核心是**零依赖 Python 程序 + 手写 JSON-RPC 的 MCP 服务**；DSH 原生消费 MCP，所以插件的主要工作不是「重写本体引擎」，而是**把上游正确地放进 DSH 的装配模型里**：一条 MCP 行提供 29 个工具，一个 Host 插件把 3 个技能注册进技能目录。
+上游核心是**零依赖 Python 程序 + 手写 JSON-RPC 的 MCP 服务**；DSH 原生消费 MCP，所以插件的主要工作不是「重写本体引擎」，而是**把上游正确地放进 DSH 的装配模型里**：一条 MCP 行提供 29 个工具，一个 Host 插件把 3 个技能注册进技能目录，并提供一个只读的右侧栏面板。
 
 ## 分层
 
@@ -12,15 +12,17 @@
 ┌──────────────────────────────────────────────────────────────────────┐
 │ 浏览器（DSH Web Client）                                              │
 │   技能目录、工具调用卡片                                              │
-│   [计划] 右侧栏 evo 面板 —— docs/subsystems/client-sidebar.md         │
+│   client.js：右侧栏「EvoOntology」标签页（只读视图）                  │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │ Connection RPC（DSH 内建）
+                                │ 面板读数据：remote.commands → /evo status
 ┌───────────────────────────────▼──────────────────────────────────────┐
 │ Host（Cordis 插件树）                                                 │
 │                                                                      │
 │  @noah/dsh-evoontology（本仓库 index.js，Host 插件）                  │
 │    · stagePython()  python/  ──copy──▶  $DSH_HOME/evoontology/python  │
 │    · ctx.skills.registerProvider()  3 个技能进技能目录                │
+│    · ctx.commands.register()  evo 命令：只读扫工作区，回 JSON          │
 │                                                                      │
 │  @deepseek-ai/dsh-mcp-client（官方行，我们只填 config）               │
 │    · stdio 拉起 python -m evoontology.runtime.mcp_server              │
@@ -38,14 +40,17 @@
                          演化运行记录、可视化 HTML）
 ```
 
+`client.js` 与 `evo` 命令读的是**同一棵目录树**，不经过 MCP 子进程：面板只读，解析 JSON 比维护一条 MCP 通道便宜，也不必让浏览器持有 Python 侧的句柄。
+
 ## 组件与职责
 
 | 组件 | 文件 | 职责 | 不负责 |
 |---|---|---|---|
-| `@noah/dsh-evoontology` | `index.js` | 铺核心、注册技能 provider | 提供工具、渲染 UI、读写工作区内容 |
-| `evo` MCP 行 | `cordis.patch.yml` | 启动 MCP 子进程、暴露 29 个工具、超时与重连 | 技能、界面 |
+| `@noah/dsh-evoontology` | `index.js` | 铺核心、注册技能 provider、注册 `evo` 只读命令 | 提供工具、渲染 UI、写入工作区 |
+| 上游 MCP 行 | `cordis.patch.yml` | 启动 MCP 子进程、暴露 29 个工具、超时与重连 | 技能、界面 |
 | 上游核心 | `python/evoontology/` | 本体建模、版本化、演化循环、评估、可视化 | 与 DSH 的任何耦合 |
 | 上游技能 | `skills/*/SKILL.md` | 教 agent 在什么时机调哪些工具 | 执行本体逻辑 |
+| 侧边栏面板 | `client.js` | 右栏标签页里展示版本/计数/最近 run/探索器路径 | 写数据、调 MCP 工具、内嵌 HTML |
 
 ## 激活顺序（重要）
 
@@ -92,16 +97,29 @@ browse_semantics   按自然语言找概念（term / mapping / relation / constr
 resolve_semantics  把概念解析到落点对象与 SQL
 ```
 
+### 旁路观察（panel）
+
+```text
+用户点右栏「EvoOntology」
+  → client.js 取 sessionId，调 remote.commands.execute(sessionId, '/evo status', [])
+  → Host 的 evo 命令扫 workspace 目录，把版本/计数/最近 run/探索器路径写成 JSON
+  → 面板渲染；点「刷新」重跑一次
+```
+
+面板与 agent 的对话**互不阻塞**：它不占工具表、不占 MCP 连接，也不写工作区。
+
 ## 关键边界
 
 1. **上游核心零改动。** `python/` 是从上游复制来的字节级副本，任何修改都会在下次 `scripts/sync-from-upstream.ps1` 时被覆盖。要改行为只能改 DSH 侧（`index.js`、`cordis.patch.yml`、`skills/` 里的改写在同步脚本中做）。
 2. **路径不写死。** 仓库可能被换目录、被 link 安装、被复制到别的机器；因此配置里只用 `!!js dshHomePath(...)` 与 `process.env.DSH_EVOONTOLOGY_PYTHON`，绝不出现 `D:\...` 或 `C:\Users\...`。
 3. **数据只在本机。** 上游不联网；工作区落在 `$DSH_HOME`，不进用户仓库、不进 git。
 4. **卸载要能清干净。** 卸载 bundle 不会删 `$DSH_HOME/evoontology`（详见 [decisions/0002](decisions/0002-stage-core-into-dsh-home.md)），README 里写明手动清理命令。
+5. **浏览器不直连 MCP。** MCP 工具只存在于 Host 工具表，浏览器侧没有句柄；面板一律走 `evo` 命令（见 [decisions/0004](decisions/0004-sidebar-right-seat.md)、[subsystems/client-sidebar](subsystems/client-sidebar.md)）。
 
 ## 不做
 
 - 不重写本体引擎，也不 fork 上游核心（见 [decisions/0001](decisions/0001-bundle-over-python-package.md)）。
 - 不把 MCP 行做成配置型 bundle：技能必须由 JS 注册，配置型 bundle 挂不了（见 [decisions/0003](decisions/0003-skills-via-js-not-config.md)）。
 - 不用 `ctx.systemPrompt.section` 硬塞使用说明：同层重名或 order 非有限值会直接抛错，发现入口交给技能目录。
+- 面板不做写操作、不新增 MCP 工具、不内嵌可视化 HTML。
 - 不做跨机器同步、不做云端存储、不做多用户隔离。
